@@ -1,0 +1,132 @@
+# OLP AI KMA 2026 - Nền Tảng Thi Olympic Trí Tuệ Nhân Tạo Học Viện Kỹ Thuật Mật Mã
+
+Hệ thống thi đấu và chấm thi tự động dành cho cuộc thi cấp trường **Olympic Trí tuệ Nhân tạo (OLP AI KMA 2026)** tại Học viện Kỹ thuật Mật mã.
+
+Hệ thống được thiết kế hiện đại với bộ nhận diện màu sắc: **Xanh nước biển (Chủ đạo)**, **Đỏ (Điểm nhấn KMA)** và **Trắng (Nền & Tương phản)**.
+
+---
+
+## 🏗 Kiến Trúc Hệ Thống
+
+```
+system_olpai2026/
+├── backend/                  # Máy chủ API FastAPI & Cơ sở dữ liệu
+│   ├── app/
+│   │   ├── main.py           # Điểm khởi chạy FastAPI, cấu hình CORS, kết nối router
+│   │   ├── database.py       # Cấu hình kết nối cơ sở dữ liệu SQLite
+│   │   ├── models.py         # SQLAlchemy ORM (User, Problem, Dataset, Submission)
+│   │   ├── schemas.py        # Pydantic schemas (Request / Response validation)
+│   │   ├── seed_data.py      # Dữ liệu khởi tạo mẫu (Đề thi AI, Thí sinh KMA, Submissions)
+│   │   └── routers/
+│   │       ├── auth.py       # Lấy thông tin & chuyển đổi tác nhân (User / Admin)
+│   │       ├── problems.py   # Danh sách đề bài & chi tiết đề thi
+│   │       ├── leaderboard.py# Bảng xếp hạng điểm số cao nhất theo thời gian thực
+│   │       ├── submissions.py# Cổng nhận file nộp dự đoán (CSV/ZIP) & chấm điểm
+│   │       ├── datasets.py   # Kho tải dữ liệu Train / Public Test / Sample
+│   │       └── admin.py      # Bảng điều khiển quản trị, tạo đề bài, thống kê hệ thống
+│   ├── requirements.txt      # Thư viện Python (FastAPI, Uvicorn, SQLAlchemy, Pydantic)
+│   ├── Dockerfile            # Đóng gói Docker cho Backend
+│   └── .dockerignore
+│
+├── frontend/                 # Giao diện người dùng Next.js (App Router) + Tailwind CSS + Lucide Icons
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx    # Cấu trúc HTML, Meta SEO & Fonts
+│   │   │   ├── page.tsx      # Trang ứng dụng chính điều phối các tab chức năng
+│   │   │   └── globals.css   # Định nghĩa kiểu dáng và màu sắc chủ đạo
+│   │   ├── components/
+│   │   │   ├── Navbar.tsx    # Thanh điều hướng với bộ chuyển đổi tác nhân Admin / User
+│   │   │   ├── Footer.tsx    # Chân trang thông tin Học viện Kỹ thuật Mật mã
+│   │   │   └── tabs/
+│   │   │       ├── HomeTab.tsx       # Trang chủ: Giới thiệu cuộc thi, thống kê, thể lệ
+│   │   │       ├── ProblemsTab.tsx   # Danh sách & chi tiết các bài toán AI KMA
+│   │   │       ├── LeaderboardTab.tsx# Bảng xếp hạng bục vinh danh (Top 1, 2, 3)
+│   │   │       ├── SubmitTab.tsx     # Cổng nộp bài kéo thả file & lịch sử nộp
+│   │   │       ├── DatasetsTab.tsx   # Kho tải tập dữ liệu Train / Test
+│   │   │       └── AdminTab.tsx      # Quản trị viên: Thống kê & Thêm đề thi mới
+│   │   ├── lib/
+│   │   │   └── api.ts        # Client gọi API FastAPI backend
+│   │   └── types/
+│   │       └── index.ts      # TypeScript definitions cho toàn hệ thống
+│   ├── Dockerfile            # Đóng gói Docker cho Frontend
+│   └── .dockerignore
+│
+├── docker-compose.yml        # Tệp cấu hình Docker Compose triển khai cả hệ thống
+└── README.md
+```
+
+---
+
+## 👥 Hai Tác Nhân Chính (Actors)
+
+1. **User (Thí sinh / Đội thi)**:
+   - Xem thông tin cuộc thi và thể lệ tại **Trang chủ**.
+   - Tra cứu chi tiết các đề bài tại **Đề bài** (Ví dụ: `AI-01: Nhận dạng tấn công mạng lưu lượng KMA`, `AI-02: NLP An toàn thông tin`, `AI-03: Tràn bộ đệm C/C++`).
+   - Tải về tập dữ liệu Train, Test và Sample Submission tại **Dữ liệu**.
+   - Kéo thả file dự đoán (`.csv`, `.zip`) để nộp bài tại **Nộp bài**.
+   - Theo dõi thứ hạng điểm số thời gian thực trên **Bảng xếp hạng**.
+
+2. **Admin (Ban Tổ Chức / Quản trị viên)**:
+   - Menu quản trị xuất hiện trên thanh điều hướng khi ở vai trò Admin.
+   - Bảng điều khiển xem tổng số thí sinh, số đề thi, tổng số lượt nộp bài.
+   - Thêm bài toán thi mới vào hệ thống với form quản trị trực quan.
+   - Giám sát toàn bộ nhật ký nộp bài của tất cả các đội thi trên toàn trường.
+
+> **💡 Tính năng chuyển đổi nhanh tác nhân (Demo Mode)**: Trên góc phải thanh Navbar, bạn chỉ cần bấm vào avatar/tên người dùng để chọn chuyển đổi tức thời giữa tài khoản **Admin (Ban Tổ Chức)** và các đội **Thí sinh (AT18, AT19, K18)** để trải nghiệm giao diện của cả 2 tác nhân!
+
+---
+
+## 🚀 Hướng Dẫn Khởi Chạy
+
+### Cách 1: Chạy bằng Docker & Docker Compose (Khuyên dùng)
+
+Yêu cầu máy tính đã cài đặt [Docker Desktop](https://www.docker.com/).
+
+```bash
+# Khởi chạy toàn bộ hệ thống (Frontend + Backend + SQLite volume)
+docker-compose up --build
+```
+
+- **Frontend Next.js**: Truy cập tại [http://localhost:3000](http://localhost:3000)
+- **Backend FastAPI**: Truy cập tại [http://localhost:8000](http://localhost:8000)
+- **Tài liệu Swagger API**: Truy cập tại [http://localhost:8000/docs](http://localhost:8000/docs)
+
+Để dừng dịch vụ:
+```bash
+docker-compose down
+```
+
+---
+
+### Cách 2: Chạy trực tiếp trên máy cục bộ (Local Development)
+
+#### 1. Khởi động Backend (FastAPI + SQLite)
+Mở một cửa sổ Terminal (PowerShell / Command Prompt):
+```bash
+# Kích hoạt môi trường ảo (nếu dùng Windows)
+.\.venv\Scripts\activate
+
+# Cài đặt thư viện phụ thuộc (nếu chưa cài)
+pip install -r backend/requirements.txt
+
+# Khởi chạy server Backend
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+Backend sẽ tự động tạo cơ sở dữ liệu SQLite `olpai2026.db` và nạp sẵn dữ liệu mẫu (đề thi, thí sinh, bài nộp).
+
+#### 2. Khởi động Frontend (Next.js)
+Mở một cửa sổ Terminal thứ hai:
+```bash
+cd frontend
+
+# Khởi chạy server phát triển
+npm run dev
+```
+Truy cập trình duyệt tại địa chỉ: [http://localhost:3000](http://localhost:3000).
+
+---
+
+## 🎨 Tông Màu & Ngôn Ngữ Thiết Kế
+- **Xanh nước biển (Ocean Blue `#0284c7`, `#1d4ed8`, `#0f172a`)**: Đại diện cho công nghệ, trí tuệ nhân tạo và sự ổn định.
+- **Đỏ KMA (`#dc2626`, `#b91c1c`)**: Màu cờ và thương hiệu truyền thống của Học viện Kỹ thuật Mật mã, dùng làm điểm nhấn cho các nút hành động, huy hiệu LIVE, và nút nộp bài.
+- **Trắng (`#ffffff`, `#f8fafc`)**: Mang lại vẻ sáng sủa, tinh tế, sạch sẽ và hiện đại.
