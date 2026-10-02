@@ -12,7 +12,8 @@ import {
   UserCheck, 
   Layers,
   ChevronDown,
-  LogOut
+  LogOut,
+  Lock
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -35,15 +36,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
   const navItems = [
-    { id: 'home', label: 'Trang chủ', icon: Home },
-    { id: 'problems', label: 'Đề bài', icon: FileCode2 },
-    { id: 'leaderboard', label: 'Bảng xếp hạng', icon: Trophy },
-    { id: 'submit', label: 'Nộp bài', icon: UploadCloud },
-    { id: 'datasets', label: 'Dữ liệu', icon: Database },
+    { id: 'home', label: 'Trang chủ', icon: Home, isPublic: true },
+    { id: 'problems', label: 'Đề bài', icon: FileCode2, isPublic: false },
+    { id: 'leaderboard', label: 'Bảng xếp hạng', icon: Trophy, isPublic: true },
+    { id: 'submit', label: 'Nộp bài', icon: UploadCloud, isPublic: false },
+    { id: 'datasets', label: 'Dữ liệu', icon: Database, isPublic: false },
   ];
 
   if (currentUser?.role === 'admin') {
-    navItems.push({ id: 'admin', label: 'Quản trị (Admin)', icon: ShieldCheck });
+    navItems.push({ id: 'admin', label: 'Quản trị (Admin)', icon: ShieldCheck, isPublic: false });
   }
 
   return (
@@ -80,12 +81,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               const Icon = item.icon;
               const isActive = currentTab === item.id;
               const isAdminTab = item.id === 'admin';
+              const isLocked = !currentUser && !item.isPublic;
 
               return (
                 <button
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  title={isLocked ? `${item.label} (Yêu cầu đăng nhập)` : item.label}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
                     isActive
                       ? isAdminTab
                         ? 'bg-red-600 text-white shadow-sm shadow-red-500/30'
@@ -97,6 +100,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <Icon className={`w-4 h-4 ${isActive ? 'text-white' : ''}`} />
                   <span>{item.label}</span>
+                  {isLocked && (
+                    <Lock className={`w-3 h-3 ${isActive ? 'text-white/80' : 'text-slate-400'}`} />
+                  )}
                 </button>
               );
             })}
@@ -106,7 +112,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="relative">
             {!currentUser ? (
               <button
-                onClick={() => onTabChange('home')}
+                onClick={() => {
+                  onTabChange('home');
+                  setTimeout(() => {
+                    const input = document.querySelector<HTMLInputElement>('input[autoComplete="username"]');
+                    if (input) {
+                      input.focus();
+                      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 120);
+                }}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <LogOut className="w-4 h-4 rotate-180" />
@@ -199,6 +214,36 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
+        </div>
+
+        {/* Mobile Navigation bar for smaller screens */}
+        <div className="flex md:hidden items-center gap-1.5 py-2 overflow-x-auto no-scrollbar border-t border-slate-100">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentTab === item.id;
+            const isAdminTab = item.id === 'admin';
+            const isLocked = !currentUser && !item.isPublic;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => onTabChange(item.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                  isActive
+                    ? isAdminTab
+                      ? 'bg-red-600 text-white'
+                      : 'bg-blue-600 text-white'
+                    : isAdminTab
+                    ? 'text-red-600 hover:bg-red-50'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{item.label}</span>
+                {isLocked && <Lock className="w-3 h-3 text-slate-400" />}
+              </button>
+            );
+          })}
         </div>
       </div>
     </header>

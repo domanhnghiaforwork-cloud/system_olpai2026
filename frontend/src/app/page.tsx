@@ -9,6 +9,7 @@ import { LeaderboardTab } from '@/components/tabs/LeaderboardTab';
 import { SubmitTab } from '@/components/tabs/SubmitTab';
 import { DatasetsTab } from '@/components/tabs/DatasetsTab';
 import { AdminTab } from '@/components/tabs/AdminTab';
+import { AccessDenied } from '@/components/AccessDenied';
 
 import { User, Problem, Dataset, Submission, LeaderboardItem } from '@/types';
 import { 
@@ -176,6 +177,25 @@ export default function App() {
     setLeaderboard(lb);
   };
 
+  // Check guest and role-based permissions
+  // When not logged in, user can ONLY view 'home' and 'leaderboard'
+  const isGuest = !currentUser;
+  const publicTabs = ['home', 'leaderboard'];
+  const isRestrictedForGuest = isGuest && !publicTabs.includes(currentTab);
+  const isRestrictedForNonAdmin = !!currentUser && currentUser.role !== 'admin' && currentTab === 'admin';
+
+  // Navigate to login form on Home tab and auto-focus
+  const handleGoToLogin = () => {
+    setCurrentTab('home');
+    setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>('input[autoComplete="username"]');
+      if (input) {
+        input.focus();
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {/* Top Navbar */}
@@ -212,6 +232,28 @@ export default function App() {
               Đang tải hệ thống OLP AI KMA 2026...
             </span>
           </div>
+        ) : isRestrictedForGuest ? (
+          /* Guest attempted to view a restricted page: show AccessDenied */
+          <AccessDenied
+            currentTab={currentTab}
+            onNavigateHome={() => setCurrentTab('home')}
+            onGoToLogin={handleGoToLogin}
+            onNavigateLeaderboard={() => {
+              setCurrentTab('leaderboard');
+              handleLeaderboardChange(selectedLeaderboardCode, 'public');
+            }}
+          />
+        ) : isRestrictedForNonAdmin ? (
+          /* Contestant attempted to view admin page */
+          <AccessDenied
+            currentTab="admin"
+            isAdminOnly
+            onNavigateHome={() => setCurrentTab('home')}
+            onNavigateLeaderboard={() => {
+              setCurrentTab('leaderboard');
+              handleLeaderboardChange(selectedLeaderboardCode, leaderboardType);
+            }}
+          />
         ) : (
           <>
             {currentTab === 'home' && (

@@ -147,6 +147,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   onClick={() => onNavigate('problems')}
                   className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                 >
+                  {/* không thêm icon <Lock className="w-3.5 h-3.5 opacity-80" /> */}
                   <span>Khám phá đề bài</span>
                 </button>
 
@@ -154,6 +155,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   onClick={() => onNavigate('leaderboard')}
                   className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm border border-white/20 flex items-center gap-2 backdrop-blur-xs transition-all hover:scale-105 active:scale-95 cursor-pointer"
                 >
+                  {/* không thêm icon <Trophy className="w-3.5 h-3.5 text-amber-400" /> */}
                   <span>Xem Bảng xếp hạng</span>
                 </button>
 
@@ -161,25 +163,11 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   onClick={() => onNavigate('submit')}
                   className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm shadow-lg shadow-red-600/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                 >
+                  {/* không thêm icon <Lock className="w-3.5 h-3.5 opacity-80" /> */}
                   <span>Cổng Nộp bài</span>
                 </button>
               </div>
 
-              {/* Quick Feature Badges */}
-              <div className="pt-4 flex flex-wrap items-center gap-4 text-xs text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>Chấm điểm tự động real-time</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  <span>Leaderboard Public & Private</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                  <span>Bảo mật chống rò rỉ Ground-Truth</span>
-                </div>
-              </div>
             </div>
 
             {/* Right Column: Login Form */}
