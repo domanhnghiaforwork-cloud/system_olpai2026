@@ -39,6 +39,25 @@ export async function switchUser(userId: number): Promise<User> {
   return res.json();
 }
 
+export async function loginUser(username: string, password: string): Promise<User> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Đăng nhập không thành công');
+  }
+  return res.json();
+}
+
+export async function logoutUser(): Promise<void> {
+  await fetch(`${API_BASE}/api/auth/logout`, {
+    method: 'POST',
+  }).catch(() => {});
+}
+
 export async function fetchProblems(category?: string): Promise<Problem[]> {
   const url = category && category !== 'all' 
     ? `${API_BASE}/api/problems?category=${category}` 

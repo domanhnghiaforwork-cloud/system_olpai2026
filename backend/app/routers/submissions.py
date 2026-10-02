@@ -97,10 +97,14 @@ async def create_submission(
             detail=f"Cấu hình đánh giá '{eval_config_name}' không tồn tại hoặc chưa được nạp trên hệ thống."
         )
 
-    # 3. Kiểm tra trạng thái khóa hoặc đếm ngược của đề bài
+    # 3. Kiểm tra trạng thái đăng nhập và quyền hạn
     current_uid = get_current_user_id()
+    if not current_uid:
+        raise HTTPException(status_code=401, detail="Vui lòng đăng nhập tài khoản để nộp bài thi.")
     user = db.query(User).filter(User.id == current_uid).first()
-    is_admin = bool(user and user.role == "admin")
+    if not user:
+        raise HTTPException(status_code=401, detail="Tài khoản không hợp lệ hoặc đã bị vô hiệu hóa.")
+    is_admin = bool(user.role == "admin")
     if not is_admin:
         now = datetime.datetime.utcnow()
         if problem.unlock_at:

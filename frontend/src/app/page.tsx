@@ -15,6 +15,8 @@ import {
   fetchCurrentUser, 
   fetchUsers, 
   switchUser, 
+  loginUser,
+  logoutUser,
   fetchProblems, 
   fetchDatasets, 
   fetchSubmissions, 
@@ -127,6 +129,37 @@ export default function App() {
     }
   };
 
+  // When user logs in via HomeTab form
+  const handleLoginSuccess = async (user: User) => {
+    setCurrentUser(user);
+    const nextType = (user.role === 'admin' && leaderboardType === 'private') ? 'private' : 'public';
+    setLeaderboardType(nextType);
+    
+    const [subs, lb] = await Promise.all([
+      fetchSubmissions(),
+      fetchLeaderboard(selectedLeaderboardCode, nextType).catch(() => []),
+    ]);
+    setSubmissions(subs);
+    setLeaderboard(lb);
+  };
+
+  // When user logs out
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      setCurrentUser(null);
+      setLeaderboardType('public');
+      const [subs, lb] = await Promise.all([
+        fetchSubmissions(),
+        fetchLeaderboard(selectedLeaderboardCode, 'public').catch(() => []),
+      ]);
+      setSubmissions(subs);
+      setLeaderboard(lb);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // When user clicks "Nộp bài" on a problem card
   const handleSelectProblemForSubmit = (problemId: number) => {
     setSelectedSubmitProblemId(problemId);
@@ -152,6 +185,7 @@ export default function App() {
         currentUser={currentUser}
         users={users}
         onSwitchUser={handleSwitchUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Container */}
@@ -184,6 +218,9 @@ export default function App() {
               <HomeTab
                 onNavigate={(tab) => setCurrentTab(tab)}
                 problems={problems}
+                currentUser={currentUser}
+                onLoginSuccess={handleLoginSuccess}
+                onLogout={handleLogout}
               />
             )}
 

@@ -11,7 +11,8 @@ import {
   ShieldCheck, 
   UserCheck, 
   Layers,
-  ChevronDown
+  ChevronDown,
+  LogOut
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -20,6 +21,7 @@ interface NavbarProps {
   currentUser: User | null;
   users: User[];
   onSwitchUser: (userId: number) => void;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -28,6 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   users,
   onSwitchUser,
+  onLogout,
 }) => {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
@@ -99,89 +102,100 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* User Profile & Role Switcher */}
+          {/* User Account / Login Button */}
           <div className="relative">
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-3 p-1.5 pr-3 rounded-full border border-slate-200 hover:border-blue-400 bg-white shadow-xs transition-all duration-200 hover:shadow-md"
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white ${
-                currentUser?.role === 'admin' 
-                  ? 'bg-gradient-to-r from-red-600 to-rose-700 ring-2 ring-red-200' 
-                  : 'bg-gradient-to-r from-blue-600 to-sky-600 ring-2 ring-blue-200'
-              }`}>
-                {currentUser?.role === 'admin' ? 'AD' : (currentUser?.full_name?.charAt(0) || 'U')}
-              </div>
-              <div className="text-left hidden sm:block">
-                <div className="text-xs font-bold text-slate-800 leading-tight">
-                  {currentUser?.full_name || 'Đang tải...'}
-                </div>
-                <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                    currentUser?.role === 'admin' ? 'bg-red-500' : 'bg-emerald-500'
-                  }`}></span>
-                  <span>{currentUser?.role === 'admin' ? 'Quản trị viên' : (currentUser?.team_name || 'Thí sinh')}</span>
-                </div>
-              </div>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Quick Switch Dropdown for Demo / Testing Role */}
-            {dropdownOpen && (
-              <div 
-                className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200/90 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
-                onMouseLeave={() => setDropdownOpen(false)}
+            {!currentUser ? (
+              <button
+                onClick={() => onTabChange('home')}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
-                <div className="px-4 py-2 border-b border-slate-100">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Đổi tác nhân thử nghiệm
+                <LogOut className="w-4 h-4 rotate-180" />
+                <span>Đăng nhập</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-3 p-1.5 pr-3 rounded-full border border-slate-200 hover:border-blue-400 bg-white shadow-xs transition-all duration-200 hover:shadow-md cursor-pointer"
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white ${
+                    currentUser.role === 'admin' 
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 ring-2 ring-red-200' 
+                      : 'bg-gradient-to-r from-blue-600 to-sky-600 ring-2 ring-blue-200'
+                  }`}>
+                    {currentUser.role === 'admin' ? 'AD' : (currentUser.full_name?.charAt(0) || 'U')}
                   </div>
-                  <div className="text-xs text-slate-600 mt-0.5">
-                    Chuyển giữa quyền <span className="font-bold text-red-600">Admin</span> và <span className="font-bold text-blue-600">User</span>
+                  <div className="text-left hidden sm:block">
+                    <div className="text-xs font-bold text-slate-800 leading-tight">
+                      {currentUser.full_name}
+                    </div>
+                    <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                        currentUser.role === 'admin' ? 'bg-red-500' : 'bg-emerald-500'
+                      }`}></span>
+                      <span>{currentUser.role === 'admin' ? 'Quản trị viên' : (currentUser.team_name || 'Thí sinh')}</span>
+                    </div>
                   </div>
-                </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                </button>
 
-                <div className="py-1">
-                  {users.map((u) => {
-                    const isSelected = u.id === currentUser?.id;
-                    return (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          onSwitchUser(u.id);
-                          setDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition-colors ${
-                          isSelected ? 'bg-blue-50/70' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
-                            u.role === 'admin' ? 'bg-red-600' : 'bg-blue-600'
-                          }`}>
-                            {u.role === 'admin' ? 'AD' : u.full_name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-800">{u.full_name}</div>
-                            <div className="text-[10px] text-slate-500">@{u.username} • {u.team_name}</div>
-                          </div>
-                        </div>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          u.role === 'admin' 
-                            ? 'bg-red-100 text-red-700' 
-                            : 'bg-blue-100 text-blue-700'
+                {/* Account Details Dropdown */}
+                {dropdownOpen && (
+                  <div 
+                    className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200/90 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+                    onMouseLeave={() => setDropdownOpen(false)}
+                  >
+                    <div className="px-4 pb-3 border-b border-slate-100">
+                      <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Tài khoản đăng nhập
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm text-white shrink-0 ${
+                          currentUser.role === 'admin' ? 'bg-red-600' : 'bg-blue-600'
                         }`}>
-                          {u.role === 'admin' ? 'Admin' : 'Thí sinh'}
+                          {currentUser.role === 'admin' ? 'AD' : currentUser.full_name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-sm truncate">{currentUser.full_name}</div>
+                          <div className="text-xs text-blue-600 font-mono truncate">@{currentUser.username}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-700">Đội thi:</span> {currentUser.team_name}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {currentUser.email}
+                      </div>
+                      <div className="mt-2">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          currentUser.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {currentUser.role === 'admin' ? 'Quyền: Quản trị viên' : 'Quyền: Thí sinh'}
                         </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+                    </div>
 
-                <div className="px-4 py-2 border-t border-slate-100 text-[11px] text-slate-400 text-center">
-                  Học viện Kỹ thuật Mật mã (KMA) © 2026
-                </div>
-              </div>
+                    {onLogout && (
+                      <div className="pt-2 px-2">
+                        <button
+                          onClick={() => {
+                            onLogout();
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl flex items-center gap-2 text-xs text-rose-600 hover:bg-rose-50 font-semibold transition-colors cursor-pointer"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Đăng xuất khỏi hệ thống</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="mt-2 pt-2 px-4 border-t border-slate-100 text-[10px] text-slate-400 text-center">
+                      Olympic Trí tuệ Nhân tạo KMA © 2026
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
