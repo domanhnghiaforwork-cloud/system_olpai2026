@@ -32,7 +32,8 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
 
   const [selectedSubmitProblemId, setSelectedSubmitProblemId] = useState<number | null>(null);
-  const [selectedLeaderboardCode, setSelectedLeaderboardCode] = useState<string>('AI-01');
+  const [selectedLeaderboardCode, setSelectedLeaderboardCode] = useState<string>('CV-01');
+  const [leaderboardType, setLeaderboardType] = useState<'public' | 'private'>('public');
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState<boolean>(false);
@@ -63,9 +64,9 @@ export default function App() {
       setDatasets(dataRes);
       setSubmissions(subRes);
 
-      // Load initial leaderboard
+      // Load initial leaderboard (defaults to public)
       if (probRes.length > 0) {
-        const lb = await fetchLeaderboard(probRes[0].code).catch(() => []);
+        const lb = await fetchLeaderboard(probRes[0].code, 'public').catch(() => []);
         setLeaderboard(lb);
       }
     } catch (err: any) {
@@ -80,18 +81,31 @@ export default function App() {
     loadInitialData();
   }, []);
 
-  // Update leaderboard when problem code changes
-  const handleLeaderboardChange = async (code: string) => {
+  // Update leaderboard when problem code or type changes
+  const handleLeaderboardChange = async (
+    code: string, 
+    type: 'public' | 'private' = leaderboardType
+  ) => {
     try {
       setSelectedLeaderboardCode(code);
+      setLeaderboardType(type);
       setIsLeaderboardLoading(true);
-      const lb = await fetchLeaderboard(code);
+      const lb = await fetchLeaderboard(code, type);
       setLeaderboard(lb);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      if (type === 'private') {
+        setLeaderboardType('public');
+        const fallbackLb = await fetchLeaderboard(code, 'public').catch(() => []);
+        setLeaderboard(fallbackLb);
+      }
     } finally {
       setIsLeaderboardLoading(false);
     }
+  };
+
+  const handleLeaderboardTypeChange = (type: 'public' | 'private') => {
+    handleLeaderboardChange(selectedLeaderboardCode, type);
   };
 
   // Switch active user / role
@@ -99,9 +113,15 @@ export default function App() {
     try {
       const user = await switchUser(userId);
       setCurrentUser(user);
-      // Reload submissions for this user
-      const subs = await fetchSubmissions();
+      const nextType = (user.role === 'admin' && leaderboardType === 'private') ? 'private' : 'public';
+      setLeaderboardType(nextType);
+      
+      const [subs, lb] = await Promise.all([
+        fetchSubmissions(),
+        fetchLeaderboard(selectedLeaderboardCode, nextType).catch(() => []),
+      ]);
       setSubmissions(subs);
+      setLeaderboard(lb);
     } catch (err) {
       console.error(err);
     }
@@ -117,7 +137,7 @@ export default function App() {
   const handleSubmissionSuccess = async () => {
     const [subs, lb] = await Promise.all([
       fetchSubmissions(),
-      fetchLeaderboard(selectedLeaderboardCode),
+      fetchLeaderboard(selectedLeaderboardCode, leaderboardType).catch(() => []),
     ]);
     setSubmissions(subs);
     setLeaderboard(lb);
@@ -183,8 +203,11 @@ export default function App() {
                 problems={problems}
                 leaderboard={leaderboard}
                 selectedProblemCode={selectedLeaderboardCode}
-                onSelectProblemCode={handleLeaderboardChange}
-                onRefresh={() => handleLeaderboardChange(selectedLeaderboardCode)}
+                onSelectProblemCode={(code) => handleLeaderboardChange(code, leaderboardType)}
+                currentUser={currentUser}
+                leaderboardType={leaderboardType}
+                onChangeLeaderboardType={handleLeaderboardTypeChange}
+                onRefresh={() => handleLeaderboardChange(selectedLeaderboardCode, leaderboardType)}
                 isLoading={isLeaderboardLoading}
               />
             )}

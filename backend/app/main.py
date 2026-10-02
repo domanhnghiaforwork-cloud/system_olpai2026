@@ -19,7 +19,9 @@ with engine.connect() as conn:
         "ALTER TABLE datasets ADD COLUMN is_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE datasets ADD COLUMN unlock_at TIMESTAMP",
         "ALTER TABLE submissions ADD COLUMN submission_type VARCHAR(30) DEFAULT 'public'",
-        "ALTER TABLE submissions ADD COLUMN logs VARCHAR(500)"
+        "ALTER TABLE submissions ADD COLUMN logs VARCHAR(500)",
+        "ALTER TABLE problems ADD COLUMN evaluation_config VARCHAR(100)",
+        "ALTER TABLE submissions ADD COLUMN stored_path VARCHAR(300)"
     ]:
         try:
             conn.execute(text(stmt))

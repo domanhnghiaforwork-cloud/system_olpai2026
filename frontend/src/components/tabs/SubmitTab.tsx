@@ -72,10 +72,13 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   // -------------------------------------------------------------
   // LỌC DANH SÁCH ĐỀ BÀI: KHÔNG CHO XUẤT HIỆN ĐỀ ĐANG KHÓA HOẶC ĐẾM NGƯỢC
+  // VÀ CHỈ ĐỀ ĐÃ ĐƯỢC CHỌN CẤU HÌNH ĐÁNH GIÁ MỚI ĐƯỢC ĐƯA VÀO DANH SÁCH ĐỂ NỘP
   // -------------------------------------------------------------
   const availableProblems = problems.filter((p) => {
     const lockStatus = getItemLockStatus(p.is_locked, p.unlock_at, now);
-    return lockStatus.type === 'UNLOCKED';
+    const isUnlocked = lockStatus.type === 'UNLOCKED';
+    const hasEvalConfig = Boolean(p.evaluation_config && p.evaluation_config.trim() !== '');
+    return isUnlocked && hasEvalConfig;
   });
 
   const activeProblem = availableProblems.find((p) => p.id === selectedProblemId) || availableProblems[0];
@@ -270,30 +273,43 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
         <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             
-            {/* 1. Chọn đề bài (KHÔNG HIỂN THỊ ĐỀ ĐANG KHÓA HOẶC ĐẾM NGƯỢC) */}
+            {/* 1. Chọn đề bài (Chỉ các đề đã mở khóa và có Cấu hình đánh giá mới được đưa vào danh sách) */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 1. Chọn đề bài dự thi:
               </label>
               {hasNoProblems ? (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>
-                    Hiện tại tất cả các đề bài đều đang trong trạng thái <strong>Khóa</strong> hoặc <strong>Đang đếm ngược</strong>. Không có đề thi nào mở để nộp bài.
-                  </span>
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-slate-900 mb-0.5">Chưa có đề thi nào sẵn sàng nhận bài nộp</p>
+                    <p className="text-slate-600">
+                      Chỉ những đề bài đang <strong>Mở</strong> và đã được Quản trị viên <strong>Cấu hình loại đánh giá chấm điểm</strong> mới xuất hiện trong danh sách nộp bài.
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <select
-                  value={activeProblemId}
-                  onChange={(e) => onSelectProblemId(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs sm:text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-hidden"
-                >
-                  {availableProblems.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      [{p.code}] - [{p.category}] {p.title} ({p.metric})
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <select
+                    value={activeProblemId}
+                    onChange={(e) => onSelectProblemId(Number(e.target.value))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs sm:text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-hidden"
+                  >
+                    {availableProblems.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        [{p.code}] - [{p.category}] {p.title} ({p.metric} • Cấu hình: {p.evaluation_config})
+                      </option>
+                    ))}
+                  </select>
+                  {activeProblem?.evaluation_config && (
+                    <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3.5 py-2 rounded-xl font-medium">
+                      <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>
+                        Hệ thống chấm tự động: <span className="font-mono font-bold text-indigo-900 bg-indigo-100/70 px-1.5 py-0.5 rounded">{activeProblem.evaluation_config}</span> • Độ đo chuẩn: <strong className="text-slate-800">{activeProblem.metric}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -660,8 +676,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
               <tr>
-                <th className="py-3 px-4">Mã</th>
-                <th className="py-3 px-4">Bài thi</th>
+                <th className="py-3 px-4">Mã đề</th>
                 <th className="py-3 px-4">Loại nộp</th>
                 <th className="py-3 px-4">Tên file</th>
                 <th className="py-3 px-4 text-center">Trạng thái</th>
@@ -673,7 +688,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             <tbody className="divide-y divide-slate-100">
               {submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
                     Chưa có bài nộp nào được ghi nhận. Hãy tải lên file CSV để nộp bài!
                   </td>
                 </tr>
@@ -681,14 +696,14 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 submissions.map((sub) => {
                   const isPrivate = sub.submission_type === 'private';
                   const isSuccess = sub.status === 'HỢP LỆ' || sub.status === 'SUCCESS';
+                  const displayCode = sub.problem_code || (sub.problem_title ? sub.problem_title.split(']')[0].replace('[', '') : `P-${sub.problem_id}`);
 
                   return (
                     <tr key={sub.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-700">
-                        #{sub.id}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-blue-700">
-                        {sub.problem_title}
+                      <td className="py-3 px-4">
+                        <span className="font-mono font-black text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 inline-block shadow-2xs">
+                          {displayCode}
+                        </span>
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold ${

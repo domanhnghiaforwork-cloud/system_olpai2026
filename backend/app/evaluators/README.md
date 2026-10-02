@@ -1,0 +1,2 @@
+muốn bổ sung các logic đánh giá khác (ví dụ: NLP F1-Score, Object Detection mAP, Audio Classification, v.v.), bạn chỉ cần tạo thêm một file mới trong thư mục 
+evaluators/, kế thừa BaseEvaluator và đăng ký vào registry.py

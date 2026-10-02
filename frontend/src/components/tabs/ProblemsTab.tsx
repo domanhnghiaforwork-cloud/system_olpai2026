@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Problem, User } from '@/types';
+import { Problem, User, EvaluatorOption } from '@/types';
 import { 
   FileText, 
   Search, 
@@ -19,9 +19,10 @@ import {
   Sparkles,
   Lock,
   Unlock,
-  Clock
+  Clock,
+  Cpu
 } from 'lucide-react';
-import { createProblem, updateProblem, uploadProblemPdf, deleteProblem } from '@/lib/api';
+import { createProblem, updateProblem, uploadProblemPdf, deleteProblem, fetchEvaluators } from '@/lib/api';
 import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
 
 interface ProblemsTabProps {
@@ -40,6 +41,12 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'CV' | 'NLP'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // Available evaluators from system registry
+  const [evaluators, setEvaluators] = useState<EvaluatorOption[]>([]);
+  useEffect(() => {
+    fetchEvaluators().then(setEvaluators).catch(console.error);
+  }, []);
+
   // Real-time ticker for 1-second countdown updates
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
@@ -57,7 +64,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   const [createCode, setCreateCode] = useState('');
   const [createTitle, setCreateTitle] = useState('');
   const [createCategory, setCreateCategory] = useState<'CV' | 'NLP'>('CV');
-  const [createMetric, setCreateMetric] = useState('F1-Score');
+  const [createMetric, setCreateMetric] = useState('mAP');
+  const [createEvalConfig, setCreateEvalConfig] = useState<string>('eval_1_cv_hico');
   const [createIsLocked, setCreateIsLocked] = useState(false);
   const [createUnlockAt, setCreateUnlockAt] = useState('');
   const [createFile, setCreateFile] = useState<File | null>(null);
@@ -68,6 +76,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [editCategory, setEditCategory] = useState<'CV' | 'NLP'>('CV');
   const [editCode, setEditCode] = useState('');
+  const [editMetric, setEditMetric] = useState('');
+  const [editEvalConfig, setEditEvalConfig] = useState<string>('');
   const [editMaxPublic, setEditMaxPublic] = useState<number>(5);
   const [editMaxPrivate, setEditMaxPrivate] = useState<number>(2);
   const [editIsLocked, setEditIsLocked] = useState(false);
@@ -108,6 +118,9 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
       formData.append('category', createCategory);
       formData.append('metric', createMetric.trim());
       formData.append('is_locked', String(createIsLocked));
+      if (createEvalConfig.trim()) {
+        formData.append('evaluation_config', createEvalConfig.trim());
+      }
       if (createUnlockAt) {
         const iso = toUtcIsoString(createUnlockAt);
         if (iso) formData.append('unlock_at', iso);
@@ -138,6 +151,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
     setEditTitle(prob.title);
     setEditCategory(prob.category);
     setEditCode(prob.code);
+    setEditMetric(prob.metric || 'F1-Score');
+    setEditEvalConfig(prob.evaluation_config || '');
     setEditMaxPublic(prob.max_public_submissions ?? 5);
     setEditMaxPrivate(prob.max_private_submissions ?? 2);
     setEditIsLocked(Boolean(prob.is_locked));
@@ -154,6 +169,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
         title: editTitle.trim(),
         category: editCategory,
         code: editCode.trim(),
+        metric: editMetric.trim() || editingProblem.metric,
+        evaluation_config: editEvalConfig.trim() ? editEvalConfig.trim() : null,
         max_public_submissions: editMaxPublic,
         max_private_submissions: editMaxPrivate,
         is_locked: editIsLocked,
@@ -352,6 +369,24 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                     <FileText className="w-3 h-3" />
                     <span>PDF</span>
                   </span>
+
+                  {/* Evaluator Config indicator pill */}
+                  {prob.evaluation_config ? (
+                    <span 
+                      className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 shrink-0 font-mono"
+                      title={`Đề bài đã cấu hình chấm tự động: ${prob.evaluation_config}`}
+                    >
+                      <Sparkles className="w-3 h-3 text-purple-600" />
+                      <span>{prob.evaluation_config}</span>
+                    </span>
+                  ) : (
+                    <span 
+                      className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0"
+                      title="Chưa cấu hình loại đánh giá chấm điểm (Ẩn khỏi mục nộp bài)"
+                    >
+                      <span>Chưa cấu hình nộp</span>
+                    </span>
+                  )}
                 </div>
 
                 {/* Right Side: View PDF button for User, Edit / Upload actions for Admin */}
@@ -567,8 +602,9 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Mã đề bài:
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Mã đề bài:</span>
+                    <span className="text-red-500 font-bold text-[10px] uppercase tracking-wider">(Bắt buộc)</span>
                   </label>
                   <input
                     type="text"
@@ -601,11 +637,41 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="VD: F1-Score, mAP@0.5, Accuracy..."
+                  placeholder="VD: F1-Score, mAP, Accuracy..."
                   value={createMetric}
                   onChange={(e) => setCreateMetric(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden font-mono"
                 />
+              </div>
+
+              {/* Evaluator Configuration */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Loại cấu hình đánh giá (Evaluator Module):</span>
+                </label>
+                <select
+                  value={createEvalConfig}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCreateEvalConfig(val);
+                    const found = evaluators.find((ev) => ev.id === val);
+                    if (found) {
+                      setCreateMetric(found.metric);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-indigo-200 bg-white text-slate-800 focus:border-indigo-500 focus:outline-hidden"
+                >
+                  <option value="">-- Chưa cấu hình (Chưa cho phép nộp bài) --</option>
+                  {evaluators.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.id} — {ev.name} ({ev.metric})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-indigo-800 font-medium">
+                  ⚡ <strong>Quy tắc:</strong> Chỉ khi chọn cấu hình đánh giá thì đề mới được đưa vào danh sách chọn đề để nộp bài. Cấu hình hiện tại là <span className="font-mono font-bold bg-indigo-100 px-1 py-0.5 rounded">eval_1_cv_hico</span>.
+                </p>
               </div>
 
               <div>
@@ -824,6 +890,36 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                   />
                   <span className="text-[10px] text-slate-400">private_submit.csv</span>
                 </div>
+              </div>
+
+              {/* Evaluator Configuration */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-1.5">
+                <label className="block text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Loại cấu hình đánh giá (Evaluator Module):</span>
+                </label>
+                <select
+                  value={editEvalConfig}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditEvalConfig(val);
+                    const found = evaluators.find((ev) => ev.id === val);
+                    if (found) {
+                      setEditMetric(found.metric);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-indigo-200 bg-white text-slate-800 focus:border-indigo-500 focus:outline-hidden"
+                >
+                  <option value="">-- Chưa cấu hình (Ẩn khỏi danh sách nộp bài) --</option>
+                  {evaluators.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.id} — {ev.name} ({ev.metric})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-indigo-800 font-medium">
+                  ⚡ <strong>Quy tắc:</strong> Nếu chọn cấu hình thì đề này mới xuất hiện trong danh sách nộp bài. Cấu hình hiện tại là <span className="font-mono font-bold bg-indigo-100 px-1 py-0.5 rounded">eval_1_cv_hico</span>.
+                </p>
               </div>
 
               {/* Lock & Countdown settings */}

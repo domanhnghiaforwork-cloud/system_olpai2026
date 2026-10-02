@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..database import get_db
 from ..models import Problem, User
-from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate
+from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate, EvaluatorInfo
 from ..pdf_utils import PDF_DIR, ensure_problem_pdf, generate_minimal_pdf
 from ..routers.auth import CURRENT_USER_ID
+from ..evaluators import list_available_evaluators
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
 
@@ -42,8 +43,14 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         max_private_submissions=getattr(p, 'max_private_submissions', 2) or 2,
         is_locked=bool(getattr(p, 'is_locked', False)),
         unlock_at=raw_unlock,
+        evaluation_config=getattr(p, 'evaluation_config', None),
         created_at=p.created_at
     )
+
+@router.get("/evaluators", response_model=List[EvaluatorInfo])
+def get_available_evaluators():
+    """Lấy danh sách các module/loại đánh giá đang có sẵn trong hệ thống"""
+    return list_available_evaluators()
 
 @router.get("", response_model=List[ProblemResponse])
 def list_problems(
@@ -110,13 +117,18 @@ def create_problem(
     max_private_submissions: int = Form(2),
     is_locked: bool = Form(False),
     unlock_at: Optional[str] = Form(None),
+    evaluation_config: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
+    if not code or not code.strip():
+        raise HTTPException(status_code=400, detail="Mã đề bài là trường bắt buộc, không được để trống")
+
+    clean_code = code.strip()
     clean_cat = "NLP" if category.strip().upper() == "NLP" else "CV"
-    existing = db.query(Problem).filter(Problem.code == code.strip()).first()
+    existing = db.query(Problem).filter(Problem.code == clean_code).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Mã đề bài đã tồn tại")
+        raise HTTPException(status_code=400, detail=f"Mã đề bài '{clean_code}' đã tồn tại trên hệ thống")
 
     saved_filename = None
     if file and file.filename:
@@ -138,6 +150,8 @@ def create_problem(
             except Exception:
                 parsed_unlock_at = None
 
+    clean_eval_config = evaluation_config.strip() if evaluation_config and evaluation_config.strip() else None
+
     problem = Problem(
         code=code.strip(),
         title=title.strip(),
@@ -148,6 +162,7 @@ def create_problem(
         max_private_submissions=max_private_submissions,
         is_locked=is_locked,
         unlock_at=parsed_unlock_at,
+        evaluation_config=clean_eval_config,
         pdf_filename=saved_filename,
     )
     db.add(problem)
@@ -194,6 +209,12 @@ def update_problem(
         if val is not None and val.tzinfo is not None:
             val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         problem.unlock_at = val
+    if "evaluation_config" in fields_set:
+        problem.evaluation_config = (
+            problem_in.evaluation_config.strip()
+            if problem_in.evaluation_config and problem_in.evaluation_config.strip()
+            else None
+        )
 
     db.commit()
     db.refresh(problem)

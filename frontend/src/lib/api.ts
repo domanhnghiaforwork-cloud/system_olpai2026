@@ -1,6 +1,12 @@
-import { User, Problem, Dataset, Submission, LeaderboardItem, AdminStats } from '@/types';
+import { User, Problem, Dataset, Submission, AdminSubmission, LeaderboardItem, AdminStats, EvaluatorOption } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export async function fetchEvaluators(): Promise<EvaluatorOption[]> {
+  const res = await fetch(`${API_BASE}/api/problems/evaluators`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch evaluators');
+  return res.json();
+}
 
 export async function fetchCurrentUser(): Promise<User> {
   const res = await fetch(`${API_BASE}/api/auth/me`, { cache: 'no-store' });
@@ -167,10 +173,20 @@ export async function submitSolution(
   return res.json();
 }
 
-export async function fetchLeaderboard(problemCode?: string): Promise<LeaderboardItem[]> {
-  const url = problemCode ? `${API_BASE}/api/leaderboard?problem_code=${problemCode}` : `${API_BASE}/api/leaderboard`;
+export async function fetchLeaderboard(
+  problemCode?: string,
+  type: 'public' | 'private' = 'public'
+): Promise<LeaderboardItem[]> {
+  const params = new URLSearchParams();
+  if (problemCode) params.set('problem_code', problemCode);
+  params.set('type', type);
+
+  const url = `${API_BASE}/api/leaderboard?${params.toString()}`;
   const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch leaderboard');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể tải bảng xếp hạng');
+  }
   return res.json();
 }
 
@@ -178,4 +194,37 @@ export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_
   const res = await fetch(`${API_BASE}/api/admin/overview`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch admin overview');
   return res.json();
+}
+
+export async function fetchValidSubmissions(params?: {
+  problemId?: number;
+  userId?: number;
+  mode?: 'all' | 'best_per_user';
+}): Promise<AdminSubmission[]> {
+  const query = new URLSearchParams();
+  if (params?.problemId) query.set('problem_id', params.problemId.toString());
+  if (params?.userId) query.set('user_id', params.userId.toString());
+  if (params?.mode) query.set('mode', params.mode);
+
+  const url = `${API_BASE}/api/admin/submissions/valid?${query.toString()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Không thể lấy danh sách bài nộp hợp lệ');
+  return res.json();
+}
+
+export function getSubmissionDownloadUrl(submissionId: number): string {
+  return `${API_BASE}/api/admin/submissions/${submissionId}/download`;
+}
+
+export function getSubmissionsExportZipUrl(params?: {
+  problemId?: number;
+  userId?: number;
+  mode?: 'all' | 'best_per_user';
+}): string {
+  const query = new URLSearchParams();
+  if (params?.problemId) query.set('problem_id', params.problemId.toString());
+  if (params?.userId) query.set('user_id', params.userId.toString());
+  if (params?.mode) query.set('mode', params.mode);
+
+  return `${API_BASE}/api/admin/submissions/export-zip?${query.toString()}`;
 }

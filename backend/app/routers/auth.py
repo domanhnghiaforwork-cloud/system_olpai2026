@@ -7,8 +7,11 @@ from ..schemas import UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# In-memory tracking of active demo user ID for simple switching in prototype mode
 CURRENT_USER_ID = 2 # default to 'kma_cyber_ai' user
+
+def get_current_user_id() -> int:
+    global CURRENT_USER_ID
+    return CURRENT_USER_ID
 
 @router.get("/users", response_model=List[UserResponse])
 def get_all_users(db: Session = Depends(get_db)):

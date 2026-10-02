@@ -33,6 +33,7 @@ class Problem(Base):
     max_private_submissions = Column(Integer, default=2)
     is_locked = Column(Boolean, default=False)
     unlock_at = Column(DateTime, nullable=True)
+    evaluation_config = Column(String(100), nullable=True) # e.g. "eval_1_cv_hico" or None
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     submissions = relationship("Submission", back_populates="problem", cascade="all, delete-orphan")
@@ -62,6 +63,7 @@ class Submission(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     problem_id = Column(Integer, ForeignKey("problems.id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(200), nullable=False)
+    stored_path = Column(String(300), nullable=True)
     submission_type = Column(String(30), default="public") # "public" or "private"
     status = Column(String(30), default="SUCCESS") # SUCCESS, INVALID_FORMAT, FAILED
     score = Column(Float, nullable=True)

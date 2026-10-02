@@ -6,6 +6,54 @@ from datetime import datetime, timedelta
 def init_seed_data(db: Session):
     # Check if database is already initialized
     if db.query(User).first() is not None:
+        # Ensure existing CV-01 has eval_1_cv_hico if not set
+        p1_exist = db.query(Problem).filter(Problem.code == "CV-01").first()
+        if p1_exist and not getattr(p1_exist, 'evaluation_config', None):
+            p1_exist.evaluation_config = "eval_1_cv_hico"
+            p1_exist.metric = "mAP"
+            db.commit()
+
+        # Seed sample private submissions if none exist yet
+        if db.query(Submission).filter(Submission.submission_type == "private").count() == 0:
+            u_p1 = db.query(Problem).filter(Problem.code == "CV-01").first()
+            u_cyber = db.query(User).filter(User.username == "kma_cyber_ai").first()
+            u_deep = db.query(User).filter(User.username == "deep_crypto").first()
+            u_hunter = db.query(User).filter(User.username == "hunter_kma").first()
+            if u_p1 and u_cyber and u_deep:
+                priv_subs = [
+                    Submission(
+                        user_id=u_cyber.id,
+                        problem_id=u_p1.id,
+                        filename="private_submit.csv",
+                        submission_type="private",
+                        status="HỢP LỆ",
+                        score=0.9315,
+                        description="Private Evaluation - CyberAI Final Model",
+                        created_at=datetime.utcnow() - timedelta(hours=1)
+                    ),
+                    Submission(
+                        user_id=u_deep.id,
+                        problem_id=u_p1.id,
+                        filename="private_submit.csv",
+                        submission_type="private",
+                        status="HỢP LỆ",
+                        score=0.9654,
+                        description="Private Evaluation - DeepCrypto Ensemble",
+                        created_at=datetime.utcnow() - timedelta(minutes=30)
+                    ),
+                    Submission(
+                        user_id=u_hunter.id,
+                        problem_id=u_p1.id,
+                        filename="private_submit.csv",
+                        submission_type="private",
+                        status="HỢP LỆ",
+                        score=0.9082,
+                        description="Private Evaluation - SecHunter Baseline",
+                        created_at=datetime.utcnow() - timedelta(hours=3)
+                    )
+                ]
+                db.add_all(priv_subs)
+                db.commit()
         return
 
     # 1. Seed Users
@@ -49,9 +97,10 @@ def init_seed_data(db: Session):
         code="CV-01",
         title="Nhận diện biển số xe và phân loại phương tiện giao thông tại cổng Học viện KMA",
         category="CV",
-        metric="mAP@0.50",
+        metric="mAP",
         deadline="2026-11-20 23:59:59",
         max_daily_submissions=5,
+        evaluation_config="eval_1_cv_hico",
         pdf_filename="de_thi_cv01_cv.pdf"
     )
 
