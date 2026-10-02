@@ -1,4 +1,15 @@
-import { User, Problem, Dataset, Submission, AdminSubmission, LeaderboardItem, AdminStats, EvaluatorOption } from '@/types';
+import { 
+  User, 
+  Problem, 
+  Dataset, 
+  Submission, 
+  AdminSubmission, 
+  LeaderboardItem, 
+  AdminStats, 
+  EvaluatorOption,
+  BatchCreateUserParams,
+  BatchCreateUserResponse
+} from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -199,11 +210,15 @@ export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_
 export async function fetchValidSubmissions(params?: {
   problemId?: number;
   userId?: number;
+  submissionType?: 'public' | 'private' | 'all';
   mode?: 'all' | 'best_per_user';
 }): Promise<AdminSubmission[]> {
   const query = new URLSearchParams();
   if (params?.problemId) query.set('problem_id', params.problemId.toString());
   if (params?.userId) query.set('user_id', params.userId.toString());
+  if (params?.submissionType && params.submissionType !== 'all') {
+    query.set('submission_type', params.submissionType);
+  }
   if (params?.mode) query.set('mode', params.mode);
 
   const url = `${API_BASE}/api/admin/submissions/valid?${query.toString()}`;
@@ -219,12 +234,94 @@ export function getSubmissionDownloadUrl(submissionId: number): string {
 export function getSubmissionsExportZipUrl(params?: {
   problemId?: number;
   userId?: number;
+  submissionType?: 'public' | 'private' | 'all';
   mode?: 'all' | 'best_per_user';
 }): string {
   const query = new URLSearchParams();
   if (params?.problemId) query.set('problem_id', params.problemId.toString());
   if (params?.userId) query.set('user_id', params.userId.toString());
+  if (params?.submissionType && params.submissionType !== 'all') {
+    query.set('submission_type', params.submissionType);
+  }
   if (params?.mode) query.set('mode', params.mode);
 
   return `${API_BASE}/api/admin/submissions/export-zip?${query.toString()}`;
+}
+
+export async function fetchAdminUsers(params?: { search?: string; role?: string }): Promise<User[]> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set('search', params.search);
+  if (params?.role) query.set('role', params.role);
+
+  const url = `${API_BASE}/api/admin/users?${query.toString()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Không thể tải danh sách tài khoản');
+  return res.json();
+}
+
+export async function createAdminUser(data: Partial<User>): Promise<User> {
+  const res = await fetch(`${API_BASE}/api/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể tạo tài khoản');
+  }
+  return res.json();
+}
+
+export async function batchCreateAdminUsers(params: BatchCreateUserParams): Promise<BatchCreateUserResponse> {
+  const res = await fetch(`${API_BASE}/api/admin/users/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể tạo hàng loạt tài khoản');
+  }
+  return res.json();
+}
+
+export async function updateAdminUser(userId: number, data: Partial<User>): Promise<User> {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể cập nhật tài khoản');
+  }
+  return res.json();
+}
+
+export async function deleteAdminUser(userId: number): Promise<{ success: boolean; detail: string }> {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể xóa tài khoản');
+  }
+  return res.json();
+}
+
+export async function resetAdminUserPassword(userId: number, length: number = 8): Promise<{ success: boolean; username: string; new_password: string; detail: string }> {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/reset-password?length=${length}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể đặt lại mật khẩu');
+  }
+  return res.json();
+}
+
+export function getUsersExportTxtUrl(role?: string): string {
+  const query = new URLSearchParams();
+  if (role) query.set('role', role);
+  return `${API_BASE}/api/admin/users/export-txt?${query.toString()}`;
 }

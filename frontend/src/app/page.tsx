@@ -242,6 +242,9 @@ export default function App() {
                 onProblemCreated={() => {
                   fetchProblems().then(setProblems);
                 }}
+                onUsersUpdated={() => {
+                  fetchUsers().then(setUsers);
+                }}
               />
             )}
           </>

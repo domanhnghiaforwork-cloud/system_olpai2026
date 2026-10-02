@@ -1,11 +1,33 @@
 export interface User {
   id: number;
   username: string;
+  password?: string;
   full_name: string;
   email: string;
   role: 'admin' | 'user';
   team_name?: string;
   created_at?: string;
+  submissions_count?: number;
+}
+
+export interface BatchCreateUserParams {
+  prefix: string;
+  count: number;
+  start_index: number;
+  padding_digits: number;
+  team_prefix: string;
+  email_domain: string;
+  role: 'user' | 'admin';
+  password_length: number;
+  custom_password?: string;
+}
+
+export interface BatchCreateUserResponse {
+  success: boolean;
+  created_count: number;
+  skipped_count: number;
+  skipped_usernames: string[];
+  users: User[];
 }
 
 export interface Problem {

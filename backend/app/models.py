@@ -12,9 +12,10 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     role = Column(String(20), default="user") # "admin" or "user"
     team_name = Column(String(100), default="KMA AI Team")
+    password = Column(String(100), nullable=True, default="olpai2026@kma")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    submissions = relationship("Submission", back_populates="user")
+    submissions = relationship("Submission", back_populates="user", cascade="all, delete-orphan")
 
 class Problem(Base):
     __tablename__ = "problems"
@@ -60,7 +61,7 @@ class Submission(Base):
     __tablename__ = "submissions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     problem_id = Column(Integer, ForeignKey("problems.id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(200), nullable=False)
     stored_path = Column(String(300), nullable=True)

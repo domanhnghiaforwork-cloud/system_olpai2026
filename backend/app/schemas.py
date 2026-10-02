@@ -10,12 +10,44 @@ class UserBase(BaseModel):
     role: str = "user"
     team_name: Optional[str] = "KMA AI Team"
 
-class UserCreate(UserBase):
-    pass
+class UserCreate(BaseModel):
+    username: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    role: str = "user"
+    team_name: Optional[str] = None
+    password: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    team_name: Optional[str] = None
+    password: Optional[str] = None
+
+class UserBatchCreate(BaseModel):
+    prefix: str = "doi_thi_"
+    count: int = 20
+    start_index: int = 1
+    padding_digits: int = 2
+    team_prefix: str = "Đội thi"
+    email_domain: str = "olpai.kma.edu.vn"
+    role: str = "user"
+    password_length: int = 8
+    custom_password: Optional[str] = None
 
 class UserResponse(UserBase):
     id: int
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AdminUserResponse(UserBase):
+    id: int
+    password: Optional[str] = None
+    created_at: datetime
+    submissions_count: int = 0
 
     class Config:
         from_attributes = True

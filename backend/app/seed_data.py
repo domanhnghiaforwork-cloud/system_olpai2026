@@ -54,6 +54,20 @@ def init_seed_data(db: Session):
                 ]
                 db.add_all(priv_subs)
                 db.commit()
+        # Ensure default passwords are set for known users
+        default_pwd_map = {
+            "admin": "Admin@OLPAI2026",
+            "kma_cyber_ai": "CyberAI#2026",
+            "hunter_kma": "Hunter#2026",
+            "deep_crypto": "DeepCrypto#2026"
+        }
+        for u in db.query(User).all():
+            if not u.password or u.password == "olpai2026@kma":
+                if u.username in default_pwd_map:
+                    u.password = default_pwd_map[u.username]
+                elif not u.password:
+                    u.password = "olpai2026@kma"
+        db.commit()
         return
 
     # 1. Seed Users
@@ -62,7 +76,8 @@ def init_seed_data(db: Session):
         full_name="Ban Tổ Chức OLP AI KMA",
         email="admin.olpai@actvn.edu.vn",
         role="admin",
-        team_name="Ban Tổ Chức"
+        team_name="Ban Tổ Chức",
+        password="Admin@OLPAI2026"
     )
 
     user1 = User(
@@ -70,7 +85,8 @@ def init_seed_data(db: Session):
         full_name="Nguyễn Văn An & Trần Thị Bình",
         email="an.nv@student.actvn.edu.vn",
         role="user",
-        team_name="CyberAI - AT18"
+        team_name="CyberAI - AT18",
+        password="CyberAI#2026"
     )
 
     user2 = User(
@@ -78,7 +94,8 @@ def init_seed_data(db: Session):
         full_name="Lê Hoàng Nam",
         email="nam.lh@student.actvn.edu.vn",
         role="user",
-        team_name="SecHunter K19"
+        team_name="SecHunter K19",
+        password="Hunter#2026"
     )
 
     user3 = User(
@@ -86,7 +103,8 @@ def init_seed_data(db: Session):
         full_name="Phạm Minh Đức & Vũ Hải Yến",
         email="duc.pm@student.actvn.edu.vn",
         role="user",
-        team_name="CryptoLearners"
+        team_name="CryptoLearners",
+        password="DeepCrypto#2026"
     )
 
     db.add_all([admin_user, user1, user2, user3])

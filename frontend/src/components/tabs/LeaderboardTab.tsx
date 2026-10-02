@@ -169,7 +169,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
       </div>
 
       {/* Non-admin Warning Alert if they click Private */}
-      {showAdminNotice && !isAdmin && (
+      {/* {showAdminNotice && !isAdmin && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div>
@@ -179,7 +179,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
             </p>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Admin Notice Banner when viewing Private Leaderboard */}
       {leaderboardType === 'private' && isAdmin && (

@@ -305,7 +305,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3.5 py-2 rounded-xl font-medium">
                       <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span>
-                        Hệ thống chấm tự động: <span className="font-mono font-bold text-indigo-900 bg-indigo-100/70 px-1.5 py-0.5 rounded">{activeProblem.evaluation_config}</span> • Độ đo chuẩn: <strong className="text-slate-800">{activeProblem.metric}</strong>
+                        Hệ thống chấm tự động: <span className="font-mono font-bold text-indigo-900 bg-indigo-100/70 px-1.5 py-0.5 rounded">{activeProblem.evaluation_config}</span> • Độ đo chuẩn: <strong className="text-slate-800">{activeProblem?.metric || 'Độ đo'}</strong>
                       </span>
                     </div>
                   )}
@@ -630,7 +630,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       2
                     </span>
                     <span className="font-bold text-xs text-slate-900">
-                      Quy trình 2: Chấm điểm ({activeProblem.metric})
+                      Quy trình 2: Chấm điểm ({activeProblem?.metric || 'Độ đo'})
                     </span>
                   </div>
 
@@ -639,7 +639,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 </div>
 
                 <div className="text-[11px] text-slate-500 pl-7">
-                  {step2Msg || `Tính toán điểm số theo độ đo ${activeProblem.metric} trên tập ${submissionType.toUpperCase()}.`}
+                  {step2Msg || `Tính toán điểm số theo độ đo ${activeProblem?.metric || 'chuẩn'} trên tập ${submissionType.toUpperCase()}.`}
                 </div>
               </div>
             </div>

@@ -21,7 +21,8 @@ with engine.connect() as conn:
         "ALTER TABLE submissions ADD COLUMN submission_type VARCHAR(30) DEFAULT 'public'",
         "ALTER TABLE submissions ADD COLUMN logs VARCHAR(500)",
         "ALTER TABLE problems ADD COLUMN evaluation_config VARCHAR(100)",
-        "ALTER TABLE submissions ADD COLUMN stored_path VARCHAR(300)"
+        "ALTER TABLE submissions ADD COLUMN stored_path VARCHAR(300)",
+        "ALTER TABLE users ADD COLUMN password VARCHAR(100) DEFAULT 'olpai2026@kma'"
     ]:
         try:
             conn.execute(text(stmt))
