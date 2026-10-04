@@ -22,7 +22,7 @@ import {
   Unlock,
   Clock
 } from 'lucide-react';
-import { createDataset, updateDataset, deleteDataset } from '@/lib/api';
+import { createDataset, updateDataset, deleteDataset, API_BASE } from '@/lib/api';
 import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
 
 interface DatasetsTabProps {
@@ -79,7 +79,6 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
   const [isEditing, setIsEditing] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Toggle accordion expand/collapse
   const toggleExpand = (problemId: number) => {

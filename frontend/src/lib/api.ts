@@ -11,9 +11,9 @@ import {
   BatchCreateUserResponse
 } from '@/types';
 
-const API_BASE = (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL)
+export const API_BASE = (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL)
   ? '' 
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
+  : (process.env.NEXT_PUBLIC_API_URL || '');
 
 const TOKEN_KEY = 'olp_ai_kma_jwt_token';
 
@@ -35,7 +35,9 @@ export function clearAuthToken(): void {
 }
 
 function getAuthHeaders(isJson: boolean = false): Record<string, string> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    'ngrok-skip-browser-warning': 'true',
+  };
   if (isJson) {
     headers['Content-Type'] = 'application/json';
   }

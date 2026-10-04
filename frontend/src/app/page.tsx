@@ -48,14 +48,20 @@ export default function App() {
       setIsLoading(true);
       setErrorMsg(null);
 
-      // Concurrent fetch
-      const [uRes, allUsersRes, probRes, dataRes, subRes] = await Promise.all([
+      // Concurrent fetch with 6s timeout safety
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 6000)
+      );
+
+      const fetchAll = Promise.all([
         fetchCurrentUser().catch(() => null),
         fetchUsers().catch(() => []),
         fetchProblems().catch(() => []),
         fetchDatasets().catch(() => []),
         fetchSubmissions().catch(() => []),
       ]);
+
+      const [uRes, allUsersRes, probRes, dataRes, subRes] = await Promise.race([fetchAll, timeoutPromise]);
 
       if (uRes) setCurrentUser(uRes);
       if (allUsersRes.length > 0) setUsers(allUsersRes);
@@ -67,14 +73,15 @@ export default function App() {
       setDatasets(dataRes);
       setSubmissions(subRes);
 
-      // Load initial leaderboard (defaults to public)
+      // Load initial leaderboard (defaults to public, non-blocking to prevent UI freeze)
       if (probRes.length > 0) {
-        const lb = await fetchLeaderboard(probRes[0].code, 'public').catch(() => []);
-        setLeaderboard(lb);
+        fetchLeaderboard(probRes[0].code, 'public')
+          .then(setLeaderboard)
+          .catch(() => []);
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMsg('Không thể kết nối đến máy chủ backend (FastAPI). Vui lòng kiểm tra cổng 8000.');
+      setErrorMsg('Không thể kết nối đến máy chủ backend (FastAPI). Vui lòng kiểm tra lại dịch vụ.');
     } finally {
       setIsLoading(false);
     }

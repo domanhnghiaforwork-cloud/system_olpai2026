@@ -22,7 +22,7 @@ import {
   Clock,
   Cpu
 } from 'lucide-react';
-import { createProblem, updateProblem, uploadProblemPdf, deleteProblem, fetchEvaluators } from '@/lib/api';
+import { createProblem, updateProblem, uploadProblemPdf, deleteProblem, fetchEvaluators, API_BASE } from '@/lib/api';
 import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
 
 interface ProblemsTabProps {
@@ -90,7 +90,6 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = currentUser?.role === 'admin';
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Filter problems by CV/NLP and Search Query
   const filteredProblems = problems.filter((p) => {

@@ -16,6 +16,7 @@ services:
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
       - JWT_SECRET_KEY=olp_ai_kma_2026_super_secret_jwt_key_secure_contest
+      - SEED_DEMO_DATA=true
     restart: unless-stopped
 
   frontend:
@@ -32,6 +33,7 @@ services:
     environment:
       - INTERNAL_BACKEND_URL=http://backend:8000
       - NEXT_PUBLIC_API_URL=
+      - ALLOWED_DEV_ORIGINS=*.ngrok-free.dev,*.ngrok-free.app,*.ngrok.app,*.ngrok.io,larcher-brecken-palynologically.ngrok-free.dev
     depends_on:
       - backend
     restart: unless-stopped

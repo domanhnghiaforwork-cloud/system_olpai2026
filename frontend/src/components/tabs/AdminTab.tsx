@@ -57,7 +57,9 @@ import {
   updateAdminUser,
   deleteAdminUser,
   resetAdminUserPassword,
-  getUsersExportTxtUrl
+  getUsersExportTxtUrl,
+  createProblem,
+  API_BASE
 } from '@/lib/api';
 
 interface AdminTabProps {
@@ -427,7 +429,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
 
     try {
       setIsCreating(true);
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const formData = new FormData();
       formData.append('code', newCode);
       formData.append('title', newTitle);
@@ -438,24 +439,16 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
         formData.append('evaluation_config', newEvalConfig);
       }
 
-      const res = await fetch(`${API_BASE}/api/problems`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.ok) {
-        setCreateMsg('Đã tạo đề bài mới thành công!');
-        setNewCode('');
-        setNewTitle('');
-        setNewDesc('');
-        onProblemCreated();
-        loadOverview();
-        fetchProblems().then(setProblemsList).catch(console.error);
-      } else {
-        setCreateMsg('Lỗi khi tạo đề bài');
-      }
-    } catch (err) {
-      setCreateMsg('Lỗi kết nối tới máy chủ');
+      await createProblem(formData);
+      setCreateMsg('Đã tạo đề bài mới thành công!');
+      setNewCode('');
+      setNewTitle('');
+      setNewDesc('');
+      onProblemCreated();
+      loadOverview();
+      fetchProblems().then(setProblemsList).catch(console.error);
+    } catch (err: any) {
+      setCreateMsg(err.message || 'Lỗi khi tạo đề bài');
     } finally {
       setIsCreating(false);
     }
