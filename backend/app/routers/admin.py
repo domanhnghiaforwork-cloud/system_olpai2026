@@ -12,6 +12,7 @@ from ..database import get_db
 from ..models import User, Problem, Submission, Dataset
 from ..schemas import AdminUserResponse, UserCreate, UserUpdate, UserBatchCreate
 from ..auth_utils import require_admin
+from ..pdf_utils import make_content_disposition
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -308,11 +309,12 @@ def export_submissions_zip(
         ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         zip_filename = f"valid_submissions{type_suffix}_{ts}.zip"
 
+    content_disp = make_content_disposition("attachment", zip_filename)
     return Response(
         content=zip_buffer.getvalue(),
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            "Content-Disposition": content_disp,
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
@@ -629,12 +631,13 @@ def export_users_txt(
 
     content_str = "\n".join(lines)
     filename = f"danh_sach_thi_sinh_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    content_disp = make_content_disposition("attachment", filename)
 
     return Response(
         content=content_str.encode("utf-8"),
         media_type="text/plain; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disp,
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )

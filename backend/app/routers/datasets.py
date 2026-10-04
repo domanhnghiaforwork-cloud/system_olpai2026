@@ -151,10 +151,13 @@ def delete_dataset(
     db.commit()
     return {"status": "success", "message": "Đã xóa mục dữ liệu thành công"}
 
+from ..pdf_utils import make_content_disposition
+
 @router.get("/download/{filename}")
 def download_sample_dataset(filename: str):
     content = f"id,feature_1,feature_2,feature_3,label\n1,0.25,1.43,0.88,1\n2,0.12,0.55,0.21,0\n3,0.98,2.11,1.45,2\n"
+    content_disp = make_content_disposition("attachment", filename)
     return PlainTextResponse(
         content,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": content_disp}
     )

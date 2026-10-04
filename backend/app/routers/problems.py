@@ -8,7 +8,7 @@ from typing import List, Optional
 from ..database import get_db
 from ..models import Problem, User
 from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate, EvaluatorInfo
-from ..pdf_utils import PDF_DIR, ensure_problem_pdf, generate_minimal_pdf
+from ..pdf_utils import PDF_DIR, ensure_problem_pdf, generate_minimal_pdf, make_content_disposition, sanitize_filename
 from ..auth_utils import get_current_user_optional, require_admin
 from ..evaluators import list_available_evaluators
 
@@ -93,20 +93,20 @@ def view_problem_pdf(
 
     filename = ensure_problem_pdf(problem.id, problem.code, problem.title, problem.category, problem.pdf_filename)
     filepath = os.path.join(PDF_DIR, filename)
+    content_disp = make_content_disposition("inline", filename)
 
     if not os.path.exists(filepath):
         pdf_data = generate_minimal_pdf(problem.title, problem.code, problem.category)
         return Response(
             content=pdf_data,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename={filename}"}
+            headers={"Content-Disposition": content_disp}
         )
 
     return FileResponse(
         path=filepath,
         media_type="application/pdf",
-        filename=filename,
-        headers={"Content-Disposition": f"inline; filename={filename}"}
+        headers={"Content-Disposition": content_disp}
     )
 
 @router.post("", response_model=ProblemResponse)
@@ -136,7 +136,8 @@ def create_problem(
 
     saved_filename = None
     if file and file.filename:
-        safe_name = f"de_thi_{code.strip().lower()}_{clean_cat.lower()}_{file.filename}"
+        clean_raw_name = sanitize_filename(file.filename, fallback_prefix="de_thi")
+        safe_name = f"de_thi_{clean_code.lower()}_{clean_cat.lower()}_{clean_raw_name}"
         dest_path = os.path.join(PDF_DIR, safe_name)
         with open(dest_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -236,7 +237,8 @@ def upload_problem_pdf(
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
 
-    safe_name = f"de_thi_{problem.code.lower()}_{problem.category.lower()}_{file.filename}"
+    clean_raw_name = sanitize_filename(file.filename, fallback_prefix="de_thi")
+    safe_name = f"de_thi_{problem.code.lower()}_{problem.category.lower()}_{clean_raw_name}"
     dest_path = os.path.join(PDF_DIR, safe_name)
     with open(dest_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)

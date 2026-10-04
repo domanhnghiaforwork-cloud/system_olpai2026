@@ -1,7 +1,39 @@
 import os
+import re
+import unicodedata
+from urllib.parse import quote
 
 PDF_DIR = "./uploads/problems"
 os.makedirs(PDF_DIR, exist_ok=True)
+
+def sanitize_filename(filename: str, fallback_prefix: str = "file") -> str:
+    """
+    Sanitize filename into safe ASCII characters for filesystem and HTTP headers:
+    1. Replaces 'đ'/'Đ' with 'd'/'D' and removes Vietnamese diacritics.
+    2. Replaces non-alphanumeric chars (except . - _) with underscores.
+    """
+    if not filename:
+        return f"{fallback_prefix}.pdf"
+    base = os.path.basename(filename)
+    base = base.replace('đ', 'd').replace('Đ', 'D')
+    normalized = unicodedata.normalize('NFKD', base).encode('ascii', 'ignore').decode('ascii')
+    clean = re.sub(r'[^a-zA-Z0-9._-]', '_', normalized)
+    clean = re.sub(r'_+', '_', clean).strip('._')
+    if not clean or clean.endswith('.'):
+        clean = f"{clean or fallback_prefix}.pdf"
+    if not clean.lower().endswith('.pdf'):
+        clean = f"{clean}.pdf"
+    return clean
+
+def make_content_disposition(disposition: str, filename: str) -> str:
+    """
+    Creates RFC 6266 / RFC 5987 compliant Content-Disposition header.
+    ASCII fallback in filename="..." and UTF-8 encoded in filename*=UTF-8''...
+    Ensures Starlette latin-1 header encoding never fails!
+    """
+    ascii_name = sanitize_filename(filename)
+    quoted_utf8 = quote(filename)
+    return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted_utf8}"
 
 def generate_minimal_pdf(title: str, code: str, category: str) -> bytes:
     """
@@ -83,11 +115,18 @@ def ensure_problem_pdf(problem_id: int, code: str, title: str, category: str, ex
         filepath = os.path.join(PDF_DIR, existing_filename)
         if os.path.exists(filepath):
             return existing_filename
+        clean_name = sanitize_filename(existing_filename)
+        clean_path = os.path.join(PDF_DIR, clean_name)
+        if os.path.exists(clean_path):
+            return clean_name
 
-    filename = f"de_thi_{code.lower()}_{category.lower()}.pdf"
+    clean_code = sanitize_filename(code.lower(), fallback_prefix="prob")
+    clean_code = re.sub(r'\.pdf$', '', clean_code, flags=re.IGNORECASE)
+    filename = f"de_thi_{clean_code}_{category.lower()}.pdf"
     filepath = os.path.join(PDF_DIR, filename)
     if not os.path.exists(filepath):
         pdf_bytes = generate_minimal_pdf(title, code, category)
         with open(filepath, "wb") as f:
             f.write(pdf_bytes)
     return filename
+
