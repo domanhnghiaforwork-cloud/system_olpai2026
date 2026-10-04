@@ -5,7 +5,7 @@ from typing import List, Optional
 from ..database import get_db
 from ..models import Submission, User, Problem
 from ..schemas import LeaderboardItem
-from .auth import get_current_user_id
+from ..auth_utils import get_current_user_optional
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
@@ -13,14 +13,13 @@ router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 def get_leaderboard(
     problem_code: Optional[str] = Query(None, description="Mã đề bài, ví dụ CV-01"),
     type: str = Query("public", description="Loại bảng xếp hạng: 'public' hoặc 'private'"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     clean_type = "private" if type.strip().lower() == "private" else "public"
 
     # KIỂM TRA QUYỀN: Bảng xếp hạng Private CHỈ hiển thị cho tài khoản Quản trị viên (Admin)
     if clean_type == "private":
-        current_uid = get_current_user_id()
-        current_user = db.query(User).filter(User.id == current_uid).first()
         if not current_user or current_user.role != "admin":
             raise HTTPException(
                 status_code=403,

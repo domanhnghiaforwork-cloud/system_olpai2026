@@ -7,7 +7,7 @@ from typing import List, Optional
 from ..database import get_db
 from ..models import Submission, User, Problem
 from ..schemas import SubmissionResponse
-from .auth import get_current_user_id
+from ..auth_utils import get_current_user
 from ..evaluators import get_evaluator
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
@@ -19,12 +19,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def list_submissions(
     problem_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(Submission)
     if problem_id:
         query = query.filter(Submission.problem_id == problem_id)
-    if user_id:
+    
+    # Phân quyền: Thí sinh thường chỉ được xem các bài nộp của chính mình!
+    if current_user.role != "admin":
+        query = query.filter(Submission.user_id == current_user.id)
+    elif user_id:
         query = query.filter(Submission.user_id == user_id)
     
     submissions = query.order_by(Submission.created_at.desc()).all()
@@ -46,6 +51,20 @@ def list_submissions(
             except Exception:
                 file_size_str = None
 
+        sub_type = getattr(sub, 'submission_type', 'public') or 'public'
+        is_private = (sub_type == 'private')
+
+        # Thí sinh thường: ẩn điểm private, ẩn đường dẫn lưu file, ẩn logs private
+        score_to_show = sub.score
+        stored_path_to_show = sub.stored_path
+        logs_to_show = getattr(sub, 'logs', None)
+
+        if current_user.role != "admin":
+            stored_path_to_show = None
+            if is_private:
+                score_to_show = None
+                logs_to_show = "Bài nộp Private đã được hệ thống ghi nhận và lưu trữ an toàn."
+
         result.append(
             SubmissionResponse(
                 id=sub.id,
@@ -57,14 +76,14 @@ def list_submissions(
                 problem_title=f"[{sub.problem.code}] {sub.problem.title}" if sub.problem else f"Problem {sub.problem_id}",
                 problem_code=sub.problem.code if sub.problem else f"P-{sub.problem_id}",
                 filename=sub.filename,
-                stored_path=sub.stored_path,
+                stored_path=stored_path_to_show,
                 file_exists=file_exists,
                 file_size_str=file_size_str,
-                submission_type=getattr(sub, 'submission_type', 'public') or 'public',
+                submission_type=sub_type,
                 status=sub.status,
-                score=sub.score,
+                score=score_to_show,
                 description=sub.description,
-                logs=getattr(sub, 'logs', None),
+                logs=logs_to_show,
                 created_at=sub.created_at
             )
         )
@@ -75,6 +94,7 @@ async def create_submission(
     problem_id: int = Form(...),
     submission_type: str = Form("public"), # "public" for public_submit.csv, "private" for private_submit.csv
     file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     # 1. Xác thực đề bài
@@ -98,12 +118,8 @@ async def create_submission(
         )
 
     # 3. Kiểm tra trạng thái đăng nhập và quyền hạn
-    current_uid = get_current_user_id()
-    if not current_uid:
-        raise HTTPException(status_code=401, detail="Vui lòng đăng nhập tài khoản để nộp bài thi.")
-    user = db.query(User).filter(User.id == current_uid).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Tài khoản không hợp lệ hoặc đã bị vô hiệu hóa.")
+    current_uid = current_user.id
+    user = current_user
     is_admin = bool(user.role == "admin")
     if not is_admin:
         now = datetime.datetime.utcnow()
@@ -270,7 +286,24 @@ async def create_submission(
     db.commit()
     db.refresh(successful_sub)
 
-    result_line = f"Điểm số đạt được: {score} ({metric_name})"
+    is_private = (clean_sub_type == "private")
+    score_in_response = score if (not is_private or is_admin) else None
+    result_line = (
+        f"Điểm số đạt được: {score} ({metric_name})"
+        if (not is_private or is_admin)
+        else "✅ Bài nộp Private hợp lệ và đã được hệ thống ghi nhận thành công (Điểm số được bảo mật)."
+    )
+
+    scoring_step = {
+        "status": "PASS",
+        "score": score_in_response,
+        "metric": metric_name,
+        "message": (
+            scoring_msg if (not is_private or is_admin)
+            else "Đã chấm điểm và lưu trữ an toàn trên hệ thống. Điểm Private sẽ được giữ bí mật cho đến lễ tổng kết."
+        ),
+        "details": getattr(score_result, 'details', {}) if (not is_private or is_admin) else {}
+    }
 
     return {
         "success": True,
@@ -282,14 +315,8 @@ async def create_submission(
             "message": val_result.message,
             "row_count": val_result.row_count
         },
-        "step2_scoring": {
-            "status": "PASS",
-            "score": score,
-            "metric": metric_name,
-            "message": scoring_msg,
-            "details": getattr(score_result, 'details', {})
-        },
+        "step2_scoring": scoring_step,
         "final_status": "HỢP LỆ",
-        "score": score,
+        "score": score_in_response,
         "result_line": result_line
     }

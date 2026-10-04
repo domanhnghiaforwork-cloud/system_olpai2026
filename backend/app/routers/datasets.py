@@ -6,7 +6,7 @@ from typing import List, Optional
 from ..database import get_db
 from ..models import Dataset, Problem, User
 from ..schemas import DatasetResponse, DatasetCreate, DatasetUpdate
-from ..routers.auth import CURRENT_USER_ID
+from ..auth_utils import get_current_user_optional, require_admin
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -37,14 +37,17 @@ def serialize_dataset(d: Dataset, is_admin: bool = False, prob_locked: bool = Fa
     )
 
 @router.get("", response_model=List[DatasetResponse])
-def list_datasets(problem_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_datasets(
+    problem_id: Optional[int] = None, 
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
     query = db.query(Dataset)
     if problem_id:
         query = query.filter(Dataset.problem_id == problem_id)
     items = query.order_by(Dataset.id.asc()).all()
 
-    user = db.query(User).filter(User.id == CURRENT_USER_ID).first()
-    is_admin = bool(user and user.role == "admin")
+    is_admin = bool(current_user and current_user.role == "admin")
     now = datetime.datetime.utcnow()
 
     results = []
@@ -71,7 +74,11 @@ def list_datasets(problem_id: Optional[int] = None, db: Session = Depends(get_db
     return results
 
 @router.post("", response_model=DatasetResponse)
-def create_dataset(item_in: DatasetCreate, db: Session = Depends(get_db)):
+def create_dataset(
+    item_in: DatasetCreate, 
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
     problem = db.query(Problem).filter(Problem.id == item_in.problem_id).first()
     if not problem:
         raise HTTPException(status_code=404, detail="Không tìm thấy đề bài tương ứng")
@@ -97,7 +104,12 @@ def create_dataset(item_in: DatasetCreate, db: Session = Depends(get_db)):
     return serialize_dataset(dataset, is_admin=True)
 
 @router.put("/{dataset_id}", response_model=DatasetResponse)
-def update_dataset(dataset_id: int, item_in: DatasetUpdate, db: Session = Depends(get_db)):
+def update_dataset(
+    dataset_id: int, 
+    item_in: DatasetUpdate, 
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Không tìm thấy mục dữ liệu")
@@ -127,7 +139,11 @@ def update_dataset(dataset_id: int, item_in: DatasetUpdate, db: Session = Depend
     return serialize_dataset(dataset, is_admin=True)
 
 @router.delete("/{dataset_id}")
-def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
+def delete_dataset(
+    dataset_id: int, 
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Không tìm thấy mục dữ liệu")

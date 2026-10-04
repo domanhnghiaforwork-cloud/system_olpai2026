@@ -9,7 +9,7 @@ from ..database import get_db
 from ..models import Problem, User
 from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate, EvaluatorInfo
 from ..pdf_utils import PDF_DIR, ensure_problem_pdf, generate_minimal_pdf
-from ..routers.auth import CURRENT_USER_ID
+from ..auth_utils import get_current_user_optional, require_admin
 from ..evaluators import list_available_evaluators
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
@@ -71,14 +71,17 @@ def get_problem(problem_id: int, db: Session = Depends(get_db)):
     return serialize_problem(problem)
 
 @router.get("/{problem_id}/pdf")
-def view_problem_pdf(problem_id: int, db: Session = Depends(get_db)):
+def view_problem_pdf(
+    problem_id: int, 
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
 
     # Access check: If problem is locked or in countdown, only Admin can access
-    user = db.query(User).filter(User.id == CURRENT_USER_ID).first()
-    is_admin = bool(user and user.role == "admin")
+    is_admin = bool(current_user and current_user.role == "admin")
     if not is_admin:
         now = datetime.datetime.utcnow()
         if problem.unlock_at:
@@ -119,6 +122,7 @@ def create_problem(
     unlock_at: Optional[str] = Form(None),
     evaluation_config: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     if not code or not code.strip():
@@ -180,6 +184,7 @@ def create_problem(
 def update_problem(
     problem_id: int,
     problem_in: ProblemUpdate,
+    current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
@@ -224,6 +229,7 @@ def update_problem(
 def upload_problem_pdf(
     problem_id: int,
     file: UploadFile = File(...),
+    current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
@@ -241,7 +247,11 @@ def upload_problem_pdf(
     return serialize_problem(problem)
 
 @router.delete("/{problem_id}")
-def delete_problem(problem_id: int, db: Session = Depends(get_db)):
+def delete_problem(
+    problem_id: int, 
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")

@@ -34,10 +34,18 @@ with engine.connect() as conn:
 with SessionLocal() as db:
     init_seed_data(db)
 
+import os
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+is_production = (ENVIRONMENT == "production")
+
 app = FastAPI(
     title="OLP AI KMA 2026 API",
     description="Backend API phục vụ Hệ thống thi Olympic Trí tuệ Nhân tạo OLP AI KMA 2026",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json",
 )
 
 # Enable CORS for Next.js frontend
@@ -59,12 +67,15 @@ app.include_router(admin.router)
 
 @app.get("/")
 def read_root():
-    return {
+    res = {
         "system": "OLP AI KMA 2026 Platform",
         "status": "Operational",
-        "version": "1.0.0",
-        "docs": "/docs"
+        "version": "1.0.0"
     }
+    if not is_production:
+        res["docs"] = "/docs"
+    return res
+
 
 if __name__ == "__main__":
     import uvicorn

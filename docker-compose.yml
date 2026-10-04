@@ -14,6 +14,8 @@ services:
     environment:
       - DATABASE_PATH=/app/data/olpai2026.db
       - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - JWT_SECRET_KEY=olp_ai_kma_2026_super_secret_jwt_key_secure_contest
     restart: unless-stopped
 
   frontend:
@@ -28,10 +30,12 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - INTERNAL_BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=
     depends_on:
       - backend
     restart: unless-stopped
+
 
 volumes:
   backend_data:

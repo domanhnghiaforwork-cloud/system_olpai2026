@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Problem, Submission, Dataset
 from ..schemas import AdminUserResponse, UserCreate, UserUpdate, UserBatchCreate
+from ..auth_utils import require_admin
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
 
 def resolve_stored_path(sub: Submission) -> Optional[str]:
     """Tìm đường dẫn file nộp đã lưu trên đĩa máy chủ."""
