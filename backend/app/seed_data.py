@@ -56,7 +56,7 @@ def init_seed_data(db: Session):
                 db.commit()
         # Ensure default passwords are set for known users
         default_pwd_map = {
-            "admin": "Admin@OLPAI2026",
+            "admin": "123456admin@",
             "kma_cyber_ai": "CyberAI#2026",
             "hunter_kma": "Hunter#2026",
             "deep_crypto": "DeepCrypto#2026"
@@ -70,15 +70,21 @@ def init_seed_data(db: Session):
         db.commit()
         return
 
-    # 1. Seed Users
+    # 1. Seed Admin User
     admin_user = User(
         username="admin",
         full_name="Ban Tổ Chức OLP AI KMA",
         email="admin.olpai@actvn.edu.vn",
         role="admin",
         team_name="Ban Tổ Chức",
-        password="Admin@OLPAI2026"
+        password="123456admin@"
     )
+    db.add(admin_user)
+    db.commit()
+
+    import os
+    if os.getenv("SEED_DEMO_DATA", "false").lower() not in ("true", "1"):
+        return
 
     user1 = User(
         username="kma_cyber_ai",
@@ -107,7 +113,7 @@ def init_seed_data(db: Session):
         password="DeepCrypto#2026"
     )
 
-    db.add_all([admin_user, user1, user2, user3])
+    db.add_all([user1, user2, user3])
     db.commit()
 
     # 2. Seed Problems (Only CV and NLP)
