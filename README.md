@@ -85,6 +85,8 @@ Yêu cầu máy tính đã cài đặt [Docker Desktop](https://www.docker.com/)
 ```bash
 # Khởi chạy toàn bộ hệ thống (Frontend + Backend + SQLite volume)
 docker-compose up --build
+# lệnh bản mới
+docker compose up --build
 ```
 
 - **Frontend Next.js**: Truy cập tại [http://localhost:3000](http://localhost:3000)
