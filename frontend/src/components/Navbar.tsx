@@ -13,7 +13,9 @@ import {
   Layers,
   ChevronDown,
   LogOut,
-  Lock
+  Lock,
+  MessageCircle,
+  ExternalLink
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -55,28 +57,28 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Brand Logo & Name */}
           <div 
             onClick={() => onTabChange('home')}
-            className="flex items-center gap-3 cursor-pointer group select-none"
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer group select-none"
           >
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-red-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-red-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
               <Layers className="w-6 h-6 stroke-[2.2]" />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
-                <span className="text-xl font-black tracking-tight text-slate-900 group-hover:text-blue-700 transition-colors">
+                <span className="text-base sm:text-xl whitespace-nowrap font-black tracking-tight text-slate-900 group-hover:text-blue-700 transition-colors">
                   OLP AI <span className="text-red-600">KMA</span>
                 </span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                <span className="hidden sm:inline-block text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                   2026
                 </span>
               </div>
-              <span className="text-[11px] font-medium text-slate-500 tracking-wide uppercase">
+              <span className="hidden sm:block text-[11px] font-medium text-slate-500 tracking-wide uppercase">
                 Olympic Trí tuệ Nhân tạo KMA
               </span>
             </div>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden xl:flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentTab === item.id;
@@ -108,10 +110,26 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* User Account / Login Button */}
-          <div className="relative">
+          {/* Chatbot and user account */}
+          <div className="relative flex shrink-0 items-center gap-2 sm:gap-3">
+            <a
+              href={process.env.NEXT_PUBLIC_CHATBOT_URL || 'https://larcher-brecken-palynologically.ngrok-free.dev/chatbot'}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Chatbot (mở trong tab mới)"
+              title="Mở Chatbot trong tab mới"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-red-50 px-2.5 py-2 text-sm font-extrabold shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 sm:gap-2 sm:px-3.5"
+            >
+              <MessageCircle className="h-4 w-4 text-blue-600" aria-hidden="true" />
+              <span className="bg-gradient-to-r from-blue-600 to-red-600 bg-clip-text text-transparent">
+                Chatbot
+              </span>
+              <ExternalLink className="hidden h-3.5 w-3.5 text-red-500 sm:block" aria-hidden="true" />
+            </a>
+
             {!currentUser ? (
               <button
+                aria-label="Đăng nhập"
                 onClick={() => {
                   onTabChange('home');
                   setTimeout(() => {
@@ -122,10 +140,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }
                   }, 120);
                 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                className="flex items-center gap-2 px-2.5 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <LogOut className="w-4 h-4 rotate-180" />
-                <span>Đăng nhập</span>
+                <span className="hidden sm:inline">Đăng nhập</span>
               </button>
             ) : (
               <>
@@ -157,7 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {/* Account Details Dropdown */}
                 {dropdownOpen && (
                   <div 
-                    className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200/90 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+                    className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200/90 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
                     onMouseLeave={() => setDropdownOpen(false)}
                   >
                     <div className="px-4 pb-3 border-b border-slate-100">
@@ -217,7 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mobile Navigation bar for smaller screens */}
-        <div className="flex md:hidden items-center gap-1.5 py-2 overflow-x-auto no-scrollbar border-t border-slate-100">
+        <div className="flex xl:hidden items-center gap-1.5 py-2 overflow-x-auto no-scrollbar border-t border-slate-100">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;

@@ -4,13 +4,24 @@ from .database import engine, Base, SessionLocal
 from .seed_data import init_seed_data
 from .routers import auth, problems, submissions, leaderboard, datasets, admin
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 # Safe SQLite migrations
 with engine.connect() as conn:
+    # Older Docker volumes predate these model fields. Migrate before seed
+    # queries select every Problem column; create_all does not alter tables.
+    problem_columns = {column["name"] for column in inspect(conn).get_columns("problems")}
+    if "category" not in problem_columns:
+        conn.execute(text("ALTER TABLE problems ADD COLUMN category VARCHAR(20) NOT NULL DEFAULT 'CV'"))
+        conn.execute(text("UPDATE problems SET category = 'NLP' WHERE UPPER(code) LIKE 'NLP-%'"))
+        conn.commit()
+    if "pdf_filename" not in problem_columns:
+        conn.execute(text("ALTER TABLE problems ADD COLUMN pdf_filename VARCHAR(255)"))
+        conn.commit()
+
     for stmt in [
         "ALTER TABLE problems ADD COLUMN max_public_submissions INTEGER DEFAULT 5",
         "ALTER TABLE problems ADD COLUMN max_private_submissions INTEGER DEFAULT 2",
