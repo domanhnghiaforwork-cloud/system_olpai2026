@@ -13,6 +13,7 @@ from ..models import User, Problem, Submission, Dataset
 from ..schemas import AdminUserResponse, UserCreate, UserUpdate, UserBatchCreate
 from ..auth_utils import require_admin
 from ..pdf_utils import make_content_disposition
+from ..chatbot_provisioning import enqueue_chatbot_account
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -420,6 +421,7 @@ def create_admin_user(data: UserCreate, db: Session = Depends(get_db)):
         created_at=datetime.datetime.utcnow()
     )
     db.add(new_user)
+    enqueue_chatbot_account(db, new_user, pwd)
     db.commit()
     db.refresh(new_user)
 
@@ -487,6 +489,7 @@ def batch_create_admin_users(data: UserBatchCreate, db: Session = Depends(get_db
         )
         db.add(u)
         db.flush()
+        enqueue_chatbot_account(db, u, pwd)
 
         created_users.append({
             "id": u.id,
@@ -641,4 +644,3 @@ def export_users_txt(
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
-

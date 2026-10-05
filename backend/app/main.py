@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, SessionLocal
 from .seed_data import init_seed_data
+from .chatbot_provisioning import provisioning_lifespan
 from .routers import auth, problems, submissions, leaderboard, datasets, admin
 
 from sqlalchemy import inspect, text
@@ -53,6 +54,7 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
 is_production = (ENVIRONMENT == "production")
 
 app = FastAPI(
+    lifespan=provisioning_lifespan,
     title="OLP AI KMA 2026 API",
     description="Backend API phục vụ Hệ thống thi Olympic Trí tuệ Nhân tạo OLP AI KMA 2026",
     version="1.0.0",

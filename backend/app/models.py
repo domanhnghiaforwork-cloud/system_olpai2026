@@ -16,6 +16,21 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     submissions = relationship("Submission", back_populates="user", cascade="all, delete-orphan")
+    chatbot_provision_jobs = relationship("ChatbotProvisionJob", cascade="all, delete-orphan")
+
+
+class ChatbotProvisionJob(Base):
+    """Committed with a new account; retained until chatbot acknowledges it."""
+    __tablename__ = "chatbot_provision_jobs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    email = Column(String(320), nullable=False)
+    role = Column(String(20), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    next_attempt_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False, index=True)
+    last_error = Column(String(50), nullable=True)
 
 class Problem(Base):
     __tablename__ = "problems"
