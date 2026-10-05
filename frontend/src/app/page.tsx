@@ -11,7 +11,7 @@ import { DatasetsTab } from '@/components/tabs/DatasetsTab';
 import { AdminTab } from '@/components/tabs/AdminTab';
 import { AccessDenied } from '@/components/AccessDenied';
 
-import { User, Problem, Dataset, Submission, LeaderboardItem } from '@/types';
+import { User, Problem, Dataset, Submission, LeaderboardItem, OverallLeaderboardItem } from '@/types';
 import { 
   fetchCurrentUser, 
   fetchUsers, 
@@ -21,7 +21,8 @@ import {
   fetchProblems, 
   fetchDatasets, 
   fetchSubmissions, 
-  fetchLeaderboard 
+  fetchLeaderboard,
+  fetchOverallLeaderboard
 } from '@/lib/api';
 import { Loader2, AlertCircle } from 'lucide-react';
 
@@ -33,10 +34,11 @@ export default function App() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
+  const [overallLeaderboard, setOverallLeaderboard] = useState<OverallLeaderboardItem[]>([]);
 
   const [selectedSubmitProblemId, setSelectedSubmitProblemId] = useState<number | null>(null);
   const [selectedLeaderboardCode, setSelectedLeaderboardCode] = useState<string>('CV-01');
-  const [leaderboardType, setLeaderboardType] = useState<'public' | 'private'>('public');
+  const [leaderboardType, setLeaderboardType] = useState<'overall' | 'public' | 'private'>('overall');
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState<boolean>(false);
@@ -73,7 +75,11 @@ export default function App() {
       setDatasets(dataRes);
       setSubmissions(subRes);
 
-      // Load initial leaderboard (defaults to public, non-blocking to prevent UI freeze)
+      // Load initial leaderboards (both overall and first problem's public)
+      fetchOverallLeaderboard()
+        .then(setOverallLeaderboard)
+        .catch(() => []);
+
       if (probRes.length > 0) {
         fetchLeaderboard(probRes[0].code, 'public')
           .then(setLeaderboard)
@@ -94,14 +100,20 @@ export default function App() {
   // Update leaderboard when problem code or type changes
   const handleLeaderboardChange = async (
     code: string, 
-    type: 'public' | 'private' = leaderboardType
+    type: 'overall' | 'public' | 'private' = leaderboardType
   ) => {
     try {
       setSelectedLeaderboardCode(code);
       setLeaderboardType(type);
       setIsLeaderboardLoading(true);
-      const lb = await fetchLeaderboard(code, type);
-      setLeaderboard(lb);
+
+      if (type === 'overall') {
+        const overall = await fetchOverallLeaderboard();
+        setOverallLeaderboard(overall);
+      } else {
+        const lb = await fetchLeaderboard(code, type);
+        setLeaderboard(lb);
+      }
     } catch (err: any) {
       console.error(err);
       if (type === 'private') {
@@ -114,7 +126,7 @@ export default function App() {
     }
   };
 
-  const handleLeaderboardTypeChange = (type: 'public' | 'private') => {
+  const handleLeaderboardTypeChange = (type: 'overall' | 'public' | 'private') => {
     handleLeaderboardChange(selectedLeaderboardCode, type);
   };
 
@@ -123,15 +135,22 @@ export default function App() {
     try {
       const user = await switchUser(userId);
       setCurrentUser(user);
-      const nextType = (user.role === 'admin' && leaderboardType === 'private') ? 'private' : 'public';
+      const nextType = (user.role === 'admin' && leaderboardType === 'private') 
+        ? 'private' 
+        : leaderboardType === 'overall'
+        ? 'overall'
+        : 'public';
       setLeaderboardType(nextType);
       
-      const [subs, lb] = await Promise.all([
+      const fetchLb = nextType === 'overall'
+        ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
+        : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
+
+      const [subs] = await Promise.all([
         fetchSubmissions(),
-        fetchLeaderboard(selectedLeaderboardCode, nextType).catch(() => []),
+        fetchLb,
       ]);
       setSubmissions(subs);
-      setLeaderboard(lb);
     } catch (err) {
       console.error(err);
     }
@@ -140,15 +159,22 @@ export default function App() {
   // When user logs in via HomeTab form
   const handleLoginSuccess = async (user: User) => {
     setCurrentUser(user);
-    const nextType = (user.role === 'admin' && leaderboardType === 'private') ? 'private' : 'public';
+    const nextType = (user.role === 'admin' && leaderboardType === 'private') 
+      ? 'private' 
+      : leaderboardType === 'overall'
+      ? 'overall'
+      : 'public';
     setLeaderboardType(nextType);
     
-    const [subs, lb] = await Promise.all([
+    const fetchLb = nextType === 'overall'
+      ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
+      : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
+
+    const [subs] = await Promise.all([
       fetchSubmissions(),
-      fetchLeaderboard(selectedLeaderboardCode, nextType).catch(() => []),
+      fetchLb,
     ]);
     setSubmissions(subs);
-    setLeaderboard(lb);
   };
 
   // When user logs out
@@ -156,13 +182,18 @@ export default function App() {
     try {
       await logoutUser();
       setCurrentUser(null);
-      setLeaderboardType('public');
-      const [subs, lb] = await Promise.all([
+      const nextType = leaderboardType === 'private' ? 'public' : leaderboardType;
+      setLeaderboardType(nextType);
+      
+      const fetchLb = nextType === 'overall'
+        ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
+        : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
+
+      const [subs] = await Promise.all([
         fetchSubmissions(),
-        fetchLeaderboard(selectedLeaderboardCode, 'public').catch(() => []),
+        fetchLb,
       ]);
       setSubmissions(subs);
-      setLeaderboard(lb);
     } catch (err) {
       console.error(err);
     }
@@ -176,12 +207,15 @@ export default function App() {
 
   // Refresh submissions & leaderboard after user submits
   const handleSubmissionSuccess = async () => {
-    const [subs, lb] = await Promise.all([
+    const lbType = leaderboardType === 'private' ? 'private' : 'public';
+    const [subs, lb, overall] = await Promise.all([
       fetchSubmissions(),
-      fetchLeaderboard(selectedLeaderboardCode, leaderboardType).catch(() => []),
+      fetchLeaderboard(selectedLeaderboardCode, lbType).catch(() => []),
+      fetchOverallLeaderboard().catch(() => []),
     ]);
     setSubmissions(subs);
     setLeaderboard(lb);
+    setOverallLeaderboard(overall);
   };
 
   // Check guest and role-based permissions
@@ -288,8 +322,9 @@ export default function App() {
               <LeaderboardTab
                 problems={problems}
                 leaderboard={leaderboard}
+                overallLeaderboard={overallLeaderboard}
                 selectedProblemCode={selectedLeaderboardCode}
-                onSelectProblemCode={(code) => handleLeaderboardChange(code, leaderboardType)}
+                onSelectProblemCode={(code) => handleLeaderboardChange(code, leaderboardType === 'overall' ? 'public' : leaderboardType)}
                 currentUser={currentUser}
                 leaderboardType={leaderboardType}
                 onChangeLeaderboardType={handleLeaderboardTypeChange}

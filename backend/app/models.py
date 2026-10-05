@@ -34,6 +34,8 @@ class Problem(Base):
     max_private_submissions = Column(Integer, default=2)
     is_locked = Column(Boolean, default=False)
     unlock_at = Column(DateTime, nullable=True)
+    private_is_locked = Column(Boolean, default=False)
+    private_unlock_at = Column(DateTime, nullable=True)
     evaluation_config = Column(String(100), nullable=True) # e.g. "eval_1_cv_hico" or None
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

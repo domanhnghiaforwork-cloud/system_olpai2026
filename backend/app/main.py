@@ -27,6 +27,8 @@ with engine.connect() as conn:
         "ALTER TABLE problems ADD COLUMN max_private_submissions INTEGER DEFAULT 2",
         "ALTER TABLE problems ADD COLUMN is_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE problems ADD COLUMN unlock_at TIMESTAMP",
+        "ALTER TABLE problems ADD COLUMN private_is_locked BOOLEAN DEFAULT 0",
+        "ALTER TABLE problems ADD COLUMN private_unlock_at TIMESTAMP",
         "ALTER TABLE datasets ADD COLUMN is_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE datasets ADD COLUMN unlock_at TIMESTAMP",
         "ALTER TABLE submissions ADD COLUMN submission_type VARCHAR(30) DEFAULT 'public'",

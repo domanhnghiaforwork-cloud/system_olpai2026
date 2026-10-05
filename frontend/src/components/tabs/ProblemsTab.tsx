@@ -82,6 +82,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   const [editMaxPrivate, setEditMaxPrivate] = useState<number>(2);
   const [editIsLocked, setEditIsLocked] = useState(false);
   const [editUnlockAt, setEditUnlockAt] = useState('');
+  const [editPrivateIsLocked, setEditPrivateIsLocked] = useState(false);
+  const [editPrivateUnlockAt, setEditPrivateUnlockAt] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Admin: Direct Upload PDF state
@@ -156,6 +158,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
     setEditMaxPrivate(prob.max_private_submissions ?? 2);
     setEditIsLocked(Boolean(prob.is_locked));
     setEditUnlockAt(toDatetimeLocal(prob.unlock_at));
+    setEditPrivateIsLocked(Boolean(prob.private_is_locked));
+    setEditPrivateUnlockAt(toDatetimeLocal(prob.private_unlock_at));
   };
 
   const handleUpdateSubmit = async (e: React.FormEvent) => {
@@ -174,6 +178,8 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
         max_private_submissions: editMaxPrivate,
         is_locked: editIsLocked,
         unlock_at: toUtcIsoString(editUnlockAt),
+        private_is_locked: editPrivateIsLocked,
+        private_unlock_at: toUtcIsoString(editPrivateUnlockAt),
       });
       setEditingProblem(null);
       onRefreshProblems();
@@ -324,6 +330,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
             const pdfUrl = `${API_BASE}${prob.pdf_url || `/api/problems/${prob.id}/pdf`}`;
             const lockStatus = getItemLockStatus(prob.is_locked, prob.unlock_at, now);
             const isLockedForUser = !isAdmin && lockStatus.type !== 'UNLOCKED';
+            const privLockStatus = getItemLockStatus(prob.private_is_locked, prob.private_unlock_at, now);
 
             return (
               <div
@@ -388,6 +395,25 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                       </span>
                     )
                   )}
+
+                  {/* Private status indicator pill */}
+                  {privLockStatus.type === 'COUNTDOWN' ? (
+                    <span 
+                      className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0 font-mono animate-pulse"
+                      title={`Vòng Private tự động mở sau ${privLockStatus.formatted}`}
+                    >
+                      <Clock className="w-3 h-3 text-amber-600" />
+                      <span>Private: {privLockStatus.formatted}</span>
+                    </span>
+                  ) : privLockStatus.type === 'LOCKED' ? (
+                    <span 
+                      className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 shrink-0"
+                      title="Vòng Private đang khóa"
+                    >
+                      <Lock className="w-3 h-3 text-rose-600" />
+                      <span>Private: Khóa</span>
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Right Side: View PDF button for User, Edit / Upload actions for Admin */}
@@ -1008,6 +1034,93 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                     </div>
                     <span className="text-[10px] text-slate-400 mt-1 block">
                       Đến thời gian này, đề thi sẽ tự động mở để thí sinh có thể xem PDF.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Private lock & countdown settings */}
+                <div className="p-3.5 rounded-2xl bg-red-50/50 border border-red-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-red-600" />
+                      Khóa vòng Private (private_submit.csv):
+                    </span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={editPrivateIsLocked} 
+                        onChange={(e) => setEditPrivateIsLocked(e.target.checked)} 
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                      <span className="ml-2 text-xs font-bold text-slate-700">{editPrivateIsLocked ? 'Đang Khóa' : 'Mở'}</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      Thời gian đếm ngược mở nộp Private:
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={editPrivateUnlockAt}
+                      onChange={(e) => setEditPrivateUnlockAt(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-red-500 focus:outline-hidden font-mono"
+                    />
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 15 * 60 * 1000);
+                          setEditPrivateUnlockAt(toDatetimeLocal(d));
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
+                      >
+                        +15 phút
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 60 * 60 * 1000);
+                          setEditPrivateUnlockAt(toDatetimeLocal(d));
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
+                      >
+                        +1 giờ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                          setEditPrivateUnlockAt(toDatetimeLocal(d));
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
+                      >
+                        +1 ngày
+                      </button>
+                      {editUnlockAt && (
+                        <button
+                          type="button"
+                          onClick={() => setEditPrivateUnlockAt(editUnlockAt)}
+                          className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-md text-indigo-700 cursor-pointer"
+                          title="Đồng bộ theo giờ mở đề thi"
+                        >
+                          Theo giờ mở đề
+                        </button>
+                      )}
+                      {editPrivateUnlockAt && (
+                        <button
+                          type="button"
+                          onClick={() => setEditPrivateUnlockAt('')}
+                          className="px-2 py-0.5 text-[10px] font-bold bg-red-100 border border-red-300 text-red-700 rounded-md hover:bg-red-200 cursor-pointer"
+                        >
+                          Xóa hẹn giờ
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Đến thời gian này, hệ thống sẽ tự động mở nhận bài nộp private_submit.csv cho thí sinh.
                     </span>
                   </div>
                 </div>

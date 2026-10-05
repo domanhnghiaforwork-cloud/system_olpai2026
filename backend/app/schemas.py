@@ -72,6 +72,8 @@ class ProblemBase(BaseModel):
     max_private_submissions: int = 2
     is_locked: bool = False
     unlock_at: Optional[datetime] = None
+    private_is_locked: bool = False
+    private_unlock_at: Optional[datetime] = None
     evaluation_config: Optional[str] = None
 
 class ProblemCreate(ProblemBase):
@@ -88,6 +90,8 @@ class ProblemUpdate(BaseModel):
     max_private_submissions: Optional[int] = None
     is_locked: Optional[bool] = None
     unlock_at: Optional[datetime] = None
+    private_is_locked: Optional[bool] = None
+    private_unlock_at: Optional[datetime] = None
     evaluation_config: Optional[str] = None
 
 class EvaluatorInfo(BaseModel):
@@ -161,6 +165,7 @@ class SubmissionResponse(BaseModel):
     stored_path: Optional[str] = None
     file_exists: Optional[bool] = None
     file_size_str: Optional[str] = None
+    download_url: Optional[str] = None
     submission_type: str = "public"
     status: str
     score: Optional[float] = None
@@ -182,3 +187,24 @@ class LeaderboardItem(BaseModel):
     total_submissions: int
     last_submission_time: datetime
     submission_type: Optional[str] = "public"
+
+class ProblemScoreComponent(BaseModel):
+    problem_id: int
+    problem_code: str
+    problem_title: str
+    metric: Optional[str] = None
+    score: Optional[float] = None
+    submission_id: Optional[int] = None
+    submitted_at: Optional[datetime] = None
+
+class OverallLeaderboardItem(BaseModel):
+    rank: int
+    user_id: int
+    full_name: str
+    team_name: str
+    username: Optional[str] = None
+    total_score: float
+    total_problems_submitted: int
+    total_problems_count: int
+    components: List[ProblemScoreComponent]
+    last_submission_time: Optional[datetime] = None

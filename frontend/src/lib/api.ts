@@ -5,6 +5,7 @@ import {
   Submission, 
   AdminSubmission, 
   LeaderboardItem, 
+  OverallLeaderboardItem,
   AdminStats, 
   EvaluatorOption,
   BatchCreateUserParams,
@@ -324,6 +325,19 @@ export async function fetchLeaderboard(
   return res.json();
 }
 
+export async function fetchOverallLeaderboard(): Promise<OverallLeaderboardItem[]> {
+  const url = `${API_BASE}/api/leaderboard/overall`;
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: getAuthHeaders() 
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Không thể tải bảng xếp hạng tổng');
+  }
+  return res.json();
+}
+
 export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_submissions: any[] }> {
   const res = await fetch(`${API_BASE}/api/admin/overview`, { 
     cache: 'no-store',
@@ -360,6 +374,12 @@ export function getSubmissionDownloadUrl(submissionId: number): string {
   const token = getAuthToken();
   const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
   return `${API_BASE}/api/admin/submissions/${submissionId}/download${tokenQuery}`;
+}
+
+export function getCandidateSubmissionDownloadUrl(submissionId: number): string {
+  const token = getAuthToken();
+  const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${API_BASE}/api/submissions/${submissionId}/download${tokenQuery}`;
 }
 
 export function getSubmissionsExportZipUrl(params?: {

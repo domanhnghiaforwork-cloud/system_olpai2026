@@ -46,6 +46,8 @@ export interface Problem {
   max_private_submissions?: number;
   is_locked?: boolean;
   unlock_at?: string | null;
+  private_is_locked?: boolean;
+  private_unlock_at?: string | null;
   evaluation_config?: string | null;
   created_at?: string;
 }
@@ -83,6 +85,7 @@ export interface Submission {
   stored_path?: string;
   file_exists?: boolean;
   file_size_str?: string;
+  download_url?: string;
   submission_type?: 'public' | 'private' | string;
   status: string;
   score?: number | null;
@@ -124,6 +127,29 @@ export interface LeaderboardItem {
   total_submissions: number;
   last_submission_time: string;
   submission_type?: 'public' | 'private' | string;
+}
+
+export interface ProblemScoreComponent {
+  problem_id: number;
+  problem_code: string;
+  problem_title: string;
+  metric?: string | null;
+  score?: number | null;
+  submission_id?: number | null;
+  submitted_at?: string | null;
+}
+
+export interface OverallLeaderboardItem {
+  rank: number;
+  user_id: number;
+  full_name: string;
+  team_name: string;
+  username?: string | null;
+  total_score: number;
+  total_problems_submitted: number;
+  total_problems_count: number;
+  components: ProblemScoreComponent[];
+  last_submission_time?: string | null;
 }
 
 export interface AdminStats {

@@ -27,6 +27,13 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         else:
             raw_unlock = raw_unlock.astimezone(datetime.timezone.utc)
 
+    raw_private_unlock = getattr(p, 'private_unlock_at', None)
+    if raw_private_unlock is not None:
+        if raw_private_unlock.tzinfo is None:
+            raw_private_unlock = raw_private_unlock.replace(tzinfo=datetime.timezone.utc)
+        else:
+            raw_private_unlock = raw_private_unlock.astimezone(datetime.timezone.utc)
+
     return ProblemResponse(
         id=p.id,
         code=p.code,
@@ -43,6 +50,8 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         max_private_submissions=getattr(p, 'max_private_submissions', 2) or 2,
         is_locked=bool(getattr(p, 'is_locked', False)),
         unlock_at=raw_unlock,
+        private_is_locked=bool(getattr(p, 'private_is_locked', False)),
+        private_unlock_at=raw_private_unlock,
         evaluation_config=getattr(p, 'evaluation_config', None),
         created_at=p.created_at
     )
@@ -120,6 +129,8 @@ def create_problem(
     max_private_submissions: int = Form(2),
     is_locked: bool = Form(False),
     unlock_at: Optional[str] = Form(None),
+    private_is_locked: bool = Form(False),
+    private_unlock_at: Optional[str] = Form(None),
     evaluation_config: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     current_admin: User = Depends(require_admin),
@@ -155,6 +166,18 @@ def create_problem(
             except Exception:
                 parsed_unlock_at = None
 
+    parsed_private_unlock_at = None
+    if private_unlock_at and private_unlock_at.strip():
+        try:
+            parsed_private_unlock_at = datetime.datetime.fromisoformat(private_unlock_at.strip().replace("Z", "+00:00"))
+            if parsed_private_unlock_at.tzinfo is not None:
+                parsed_private_unlock_at = parsed_private_unlock_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        except Exception:
+            try:
+                parsed_private_unlock_at = datetime.datetime.strptime(private_unlock_at.strip(), "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                parsed_private_unlock_at = None
+
     clean_eval_config = evaluation_config.strip() if evaluation_config and evaluation_config.strip() else None
 
     problem = Problem(
@@ -167,6 +190,8 @@ def create_problem(
         max_private_submissions=max_private_submissions,
         is_locked=is_locked,
         unlock_at=parsed_unlock_at,
+        private_is_locked=private_is_locked,
+        private_unlock_at=parsed_private_unlock_at,
         evaluation_config=clean_eval_config,
         pdf_filename=saved_filename,
     )
@@ -215,6 +240,13 @@ def update_problem(
         if val is not None and val.tzinfo is not None:
             val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         problem.unlock_at = val
+    if "private_is_locked" in fields_set:
+        problem.private_is_locked = bool(problem_in.private_is_locked)
+    if "private_unlock_at" in fields_set:
+        val = problem_in.private_unlock_at
+        if val is not None and val.tzinfo is not None:
+            val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        problem.private_unlock_at = val
     if "evaluation_config" in fields_set:
         problem.evaluation_config = (
             problem_in.evaluation_config.strip()

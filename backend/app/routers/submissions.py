@@ -2,7 +2,9 @@ import os
 import shutil
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional
 from ..database import get_db
 from ..models import Submission, User, Problem
@@ -65,6 +67,8 @@ def list_submissions(
                 score_to_show = None
                 logs_to_show = "Bài nộp Private đã được hệ thống ghi nhận và lưu trữ an toàn."
 
+        download_url = f"/api/submissions/{sub.id}/download" if file_exists else None
+
         result.append(
             SubmissionResponse(
                 id=sub.id,
@@ -79,6 +83,7 @@ def list_submissions(
                 stored_path=stored_path_to_show,
                 file_exists=file_exists,
                 file_size_str=file_size_str,
+                download_url=download_url,
                 submission_type=sub_type,
                 status=sub.status,
                 score=score_to_show,
@@ -88,6 +93,66 @@ def list_submissions(
             )
         )
     return result
+
+@router.get("/{submission_id}/download")
+def download_submission_file(
+    submission_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Tải về tệp CSV bài nộp của thí sinh.
+    Chỉ cho phép chính thí sinh đó hoặc Quản trị viên (Admin) tải về.
+    """
+    sub = db.query(Submission).filter(Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài nộp")
+
+    if current_user.role != "admin" and sub.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Bạn không có quyền tải xuống tệp bài nộp này."
+        )
+
+    if sub.status in ["LỖI ĐỊNH DẠNG", "INVALID_FORMAT"] or not sub.stored_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Tệp CSV bài nộp không khả dụng do bài nộp đã bị hủy sau khi kiểm tra định dạng thất bại."
+        )
+
+    file_path = sub.stored_path
+    if not file_path or not os.path.exists(file_path):
+        # Fallback tìm kiếm trong thư mục upload nếu stored_path bị lệch
+        if os.path.exists(UPLOAD_DIR):
+            prob_code = (sub.problem.code if sub.problem else f"prob_{sub.problem_id}").replace(" ", "_")
+            user_str = sub.user.username if sub.user and sub.user.username else f"user_{sub.user_id}"
+            sub_type = sub.submission_type or "public"
+            candidates = []
+            for fname in os.listdir(UPLOAD_DIR):
+                if fname.endswith(".csv") and prob_code in fname and sub_type in fname:
+                    candidates.append((1 if user_str in fname else 0, os.path.join(UPLOAD_DIR, fname)))
+            if candidates:
+                candidates.sort(key=lambda item: (item[0], os.path.getmtime(item[1])), reverse=True)
+                file_path = candidates[0][1]
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Tệp CSV bài nộp không tồn tại hoặc đã bị xóa sau khi kiểm tra định dạng."
+        )
+
+    prob_code = (sub.problem.code if sub.problem else f"prob_{sub.problem_id}").replace(" ", "_")
+    sub_type = sub.submission_type or "public"
+    orig_name = sub.filename or f"{sub_type}_submit.csv"
+    download_filename = f"{prob_code}_{sub_type}_{orig_name}"
+    if not download_filename.endswith(".csv"):
+        download_filename += ".csv"
+
+    return FileResponse(
+        path=file_path,
+        filename=download_filename,
+        media_type="text/csv"
+    )
 
 @router.post("")
 async def create_submission(
@@ -134,11 +199,37 @@ async def create_submission(
     clean_sub_type = "private" if "private" in submission_type.lower() else "public"
     standard_filename = f"{clean_sub_type}_submit.csv"
 
+    # Kiểm tra khóa / thời gian mở khóa riêng cho vòng Private
+    if not is_admin and clean_sub_type == "private":
+        now = datetime.datetime.utcnow()
+        priv_unlock = getattr(problem, 'private_unlock_at', None)
+        if priv_unlock:
+            priv_unlock_time = priv_unlock.replace(tzinfo=None) if hasattr(priv_unlock, 'tzinfo') and priv_unlock.tzinfo else priv_unlock
+            if now < priv_unlock_time:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Khu vực nộp bài Private đang trong thời gian đếm ngược chưa mở khóa."
+                )
+        elif getattr(problem, 'private_is_locked', False):
+            raise HTTPException(
+                status_code=403, 
+                detail="Khu vực nộp bài Private hiện đang bị khóa bởi Ban Tổ Chức."
+            )
+
     # 5. Kiểm tra giới hạn số lần nộp cho loại bài này
+    # QUY TẮC: Chỉ tính các bài nộp thành công / đã được chấm điểm (có điểm số và không bị lỗi).
+    # Các lần bị lỗi ở Quy trình 1 (LỖI ĐỊNH DẠNG / chưa có điểm) sẽ KHÔNG bị trừ số lần nộp của thí sinh.
+    if clean_sub_type == "private":
+        type_filter = (Submission.submission_type == "private")
+    else:
+        type_filter = or_(Submission.submission_type == "public", Submission.submission_type.is_(None))
+
     existing_count = db.query(Submission).filter(
         Submission.user_id == current_uid,
         Submission.problem_id == problem_id,
-        Submission.submission_type == clean_sub_type
+        type_filter,
+        Submission.status.notin_(["LỖI ĐỊNH DẠNG", "INVALID_FORMAT", "LỖI CHẤM ĐIỂM"]),
+        Submission.score.isnot(None)
     ).count()
 
     max_allowed = (
@@ -150,7 +241,7 @@ async def create_submission(
     if existing_count >= max_allowed:
         raise HTTPException(
             status_code=400,
-            detail=f"Đã hết số lần nộp bài {standard_filename} (Đã nộp {existing_count}/{max_allowed} lần)."
+            detail=f"Đã hết số lần nộp bài {standard_filename} (Đã nộp thành công {existing_count}/{max_allowed} lần)."
         )
 
     # 6. Lưu file đã tải lên vào thư mục upload với tên duy nhất (tránh xung đột ghi đè)
@@ -213,7 +304,7 @@ async def create_submission(
             },
             "final_status": "LỖI ĐỊNH DẠNG",
             "score": None,
-            "result_line": f"❌ Quy trình kiểm tra thất bại: {val_result.message}"
+            "result_line": f"❌ Quy trình kiểm tra thất bại: {val_result.message} (Không bị trừ lượt nộp)"
         }
 
     # -------------------------------------------------------------
