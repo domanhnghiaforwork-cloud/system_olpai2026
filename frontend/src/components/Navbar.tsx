@@ -40,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
   const [chatbotError, setChatbotError] = React.useState('');
   const chatbotUrl = getChatbotUrl();
+  const isAdmin = currentUser?.role === 'admin';
 
   const openChatbot = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (!currentUser || process.env.NEXT_PUBLIC_CHATBOT_SSO_ENABLED !== 'true') return;
@@ -76,19 +77,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'datasets', label: 'Dữ liệu', icon: Database, isPublic: false },
   ];
 
-  if (currentUser?.role === 'admin') {
+  if (isAdmin) {
     navItems.push({ id: 'admin', label: 'Quản trị (Admin)', icon: ShieldCheck, isPublic: false });
   }
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className={`mx-auto px-4 sm:px-6 ${isAdmin ? 'max-w-[1440px] lg:px-4 2xl:px-6' : 'max-w-7xl lg:px-8'}`}>
         <div className="flex items-center justify-between h-18">
           
           {/* Brand Logo & Name */}
           <div 
             onClick={() => onTabChange('home')}
-            className="flex items-center gap-2 sm:gap-3 cursor-pointer group select-none"
+            className={`flex items-center gap-2 sm:gap-3 cursor-pointer group select-none ${isAdmin ? 'xl:shrink-0 xl:whitespace-nowrap' : ''}`}
           >
             <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-red-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
               <Layers className="w-6 h-6 stroke-[2.2]" />
@@ -109,7 +110,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden xl:flex items-center gap-1">
+          <nav className={`hidden xl:flex items-center gap-1 ${isAdmin ? 'shrink-0' : ''}`}>
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentTab === item.id;
@@ -121,7 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
                   title={isLocked ? `${item.label} (Yêu cầu đăng nhập)` : item.label}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                  className={`flex items-center ${isAdmin ? 'shrink-0 whitespace-nowrap gap-1.5 px-1.5 2xl:gap-2 2xl:px-3.5' : 'gap-2 px-3.5'} py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
                     isActive
                       ? isAdminTab
                         ? 'bg-red-600 text-white shadow-sm shadow-red-500/30'
@@ -188,7 +189,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <>
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-3 p-1.5 pr-3 rounded-full border border-slate-200 hover:border-blue-400 bg-white shadow-xs transition-all duration-200 hover:shadow-md cursor-pointer"
+                  className={`flex items-center ${isAdmin ? 'gap-3 xl:gap-2 2xl:gap-3' : 'gap-3'} p-1.5 pr-3 rounded-full border border-slate-200 hover:border-blue-400 bg-white shadow-xs transition-all duration-200 hover:shadow-md cursor-pointer`}
                 >
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white ${
                     currentUser.role === 'admin' 
@@ -197,8 +198,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}>
                     {currentUser.role === 'admin' ? 'AD' : (currentUser.full_name?.charAt(0) || 'U')}
                   </div>
-                  <div className="text-left hidden sm:block">
-                    <div className="text-xs font-bold text-slate-800 leading-tight">
+                  <div className={`text-left hidden sm:block ${isAdmin ? 'xl:max-w-40 2xl:max-w-48' : ''}`}>
+                    <div className={`text-xs font-bold text-slate-800 leading-tight ${isAdmin ? 'xl:truncate' : ''}`}>
                       {currentUser.full_name}
                     </div>
                     <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
