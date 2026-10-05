@@ -9,10 +9,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     full_name = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(320), unique=True, index=True, nullable=False)
     role = Column(String(20), default="user") # "admin" or "user"
     team_name = Column(String(100), default="KMA AI Team")
-    password = Column(String(100), nullable=True, default="olpai2026@kma")
+    password = Column(String(255), nullable=True, default="olpai2026@kma")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     submissions = relationship("Submission", back_populates="user", cascade="all, delete-orphan")

@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+import jwt
 from ..database import get_db
 from ..models import User
 from ..schemas import UserResponse, LoginResponse
@@ -18,6 +22,22 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+@router.post("/chatbot-ticket")
+def chatbot_ticket(current_user: User = Depends(get_current_user)):
+    secret = os.getenv("CHATBOT_SSO_SECRET", "")
+    if len(secret) < 64:
+        raise HTTPException(status_code=503, detail="Đăng nhập liên kết chưa được bật.")
+    now = datetime.now(timezone.utc)
+    ticket = jwt.encode({
+        "iss": "olpai-system", "aud": "olpai-chatbot", "type": "chatbot-sso",
+        "sub": str(current_user.id), "email": current_user.email.lower(),
+        "role": current_user.role, "jti": secrets.token_urlsafe(32),
+        "iat": now, "exp": now + timedelta(seconds=60),
+    }, secret, algorithm="HS256")
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"ticket": ticket}, headers={"Cache-Control": "no-store"})
 
 @router.get("/users", response_model=List[UserResponse])
 def get_all_users(

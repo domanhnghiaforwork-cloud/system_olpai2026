@@ -48,6 +48,15 @@ function getAuthHeaders(isJson: boolean = false): Record<string, string> {
   return headers;
 }
 
+export async function createChatbotTicket(): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/auth/chatbot-ticket`, {
+    method: 'POST', cache: 'no-store', headers: getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error('Không thể đăng nhập Chatbot từ system.');
+  const data = await response.json() as { ticket: string };
+  return data.ticket;
+}
+
 export async function fetchEvaluators(): Promise<EvaluatorOption[]> {
   const res = await fetch(`${API_BASE}/api/problems/evaluators`, { 
     cache: 'no-store',

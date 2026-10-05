@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 import jwt
+from pwdlib import PasswordHash
+from pwdlib.exceptions import PwdlibError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -68,6 +70,13 @@ def verify_password(plain_password: str, hashed_or_stored_password: str) -> bool
 
     clean_plain = plain_password.strip()
     stored = hashed_or_stored_password.strip()
+
+    # Preserve chatbot Argon2 hashes so imported users keep their passwords.
+    if stored.startswith("$argon2"):
+        try:
+            return PasswordHash.recommended().verify(clean_plain, stored)
+        except PwdlibError:
+            return False
 
     if stored.startswith("pbkdf2:sha256:"):
         try:

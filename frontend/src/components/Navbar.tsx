@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { User } from '@/types';
+import { createChatbotTicket } from '@/lib/api';
 import { 
   Trophy, 
   FileCode2, 
@@ -36,6 +37,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
 }) => {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const [chatbotError, setChatbotError] = React.useState('');
+  const chatbotUrl = process.env.NEXT_PUBLIC_CHATBOT_URL || 'https://larcher-brecken-palynologically.ngrok-free.dev/chatbot';
+
+  const openChatbot = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!currentUser || process.env.NEXT_PUBLIC_CHATBOT_SSO_ENABLED !== 'true') return;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    // Open synchronously so browser popup protection accepts the user's click.
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) {
+      setChatbotError('Hãy cho phép mở tab mới để đăng nhập Chatbot.');
+      return;
+    }
+    tab.opener = null;
+    setChatbotError('');
+    try {
+      const ticket = await createChatbotTicket();
+      const destination = new URL(chatbotUrl, window.location.origin);
+      destination.pathname = `${destination.pathname.replace(/\/+$/, '')}/sso`;
+      // Fragments stay in the browser, outside HTTP access logs and referrers.
+      destination.hash = new URLSearchParams({ ticket }).toString();
+      if (!tab.closed) tab.location.replace(destination.toString());
+    } catch {
+      if (!tab.closed) tab.close();
+      setChatbotError('Không thể đăng nhập Chatbot. Hãy kiểm tra kết nối hoặc đăng nhập lại system.');
+    }
+  };
 
   const navItems = [
     { id: 'home', label: 'Trang chủ', icon: Home, isPublic: true },
@@ -113,7 +141,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Chatbot and user account */}
           <div className="relative flex shrink-0 items-center gap-2 sm:gap-3">
             <a
-              href={process.env.NEXT_PUBLIC_CHATBOT_URL || 'https://larcher-brecken-palynologically.ngrok-free.dev/chatbot'}
+              href={chatbotUrl}
+              onClick={openChatbot}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Chatbot (mở trong tab mới)"
@@ -126,6 +155,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
               <ExternalLink className="hidden h-3.5 w-3.5 text-red-500 sm:block" aria-hidden="true" />
             </a>
+
+            {chatbotError && (
+              <p role="alert" className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-red-200 bg-white p-3 text-sm text-red-700 shadow-lg">
+                {chatbotError}
+                <a href={chatbotUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block font-semibold underline">Mở trang đăng nhập Chatbot</a>
+              </p>
+            )}
 
             {!currentUser ? (
               <button
