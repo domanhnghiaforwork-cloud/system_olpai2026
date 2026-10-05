@@ -11,6 +11,7 @@ import {
   BatchCreateUserParams,
   BatchCreateUserResponse
 } from '@/types';
+import { resetChatbotSession, waitForChatbotSessionReset } from './chatbotSession';
 
 export const API_BASE = (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL)
   ? '' 
@@ -26,12 +27,14 @@ export function getAuthToken(): string | null {
 export function setAuthToken(token: string): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(TOKEN_KEY, token);
+    resetChatbotSession();
   }
 }
 
 export function clearAuthToken(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(TOKEN_KEY);
+    resetChatbotSession();
   }
 }
 
@@ -50,6 +53,7 @@ function getAuthHeaders(isJson: boolean = false): Record<string, string> {
 }
 
 export async function createChatbotTicket(): Promise<string> {
+  await waitForChatbotSessionReset();
   const response = await fetch(`${API_BASE}/api/auth/chatbot-ticket`, {
     method: 'POST', cache: 'no-store', headers: getAuthHeaders(),
   });
@@ -75,11 +79,13 @@ export async function fetchCurrentUser(): Promise<User | null> {
       cache: 'no-store',
       headers: getAuthHeaders() 
     });
+    if (getAuthToken() !== token) return null;
     if (!res.ok) {
       clearAuthToken();
       return null;
     }
     const data = await res.json();
+    if (getAuthToken() !== token) return null;
     if (!data || !data.id) {
       clearAuthToken();
       return null;
@@ -134,13 +140,15 @@ export async function loginUser(username: string, password: string): Promise<Use
 }
 
 export async function logoutUser(): Promise<void> {
+  const headers = getAuthHeaders();
+  // Clear both browser sessions immediately, even if the logout API is offline.
+  clearAuthToken();
   try {
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers,
     });
   } catch {}
-  clearAuthToken();
 }
 
 export async function fetchProblems(category?: string): Promise<Problem[]> {

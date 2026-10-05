@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { User } from '@/types';
-import { createChatbotTicket } from '@/lib/api';
+import { createChatbotTicket, getAuthToken } from '@/lib/api';
+import { getChatbotUrl } from '@/lib/chatbotSession';
 import { 
   Trophy, 
   FileCode2, 
@@ -38,7 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
   const [chatbotError, setChatbotError] = React.useState('');
-  const chatbotUrl = process.env.NEXT_PUBLIC_CHATBOT_URL || 'https://larcher-brecken-palynologically.ngrok-free.dev/chatbot';
+  const chatbotUrl = getChatbotUrl();
 
   const openChatbot = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (!currentUser || process.env.NEXT_PUBLIC_CHATBOT_SSO_ENABLED !== 'true') return;
@@ -53,7 +54,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     tab.opener = null;
     setChatbotError('');
     try {
+      const systemToken = getAuthToken();
       const ticket = await createChatbotTicket();
+      if (!systemToken || getAuthToken() !== systemToken) throw new Error('System session changed');
       const destination = new URL(chatbotUrl, window.location.origin);
       destination.pathname = `${destination.pathname.replace(/\/+$/, '')}/sso`;
       // Fragments stay in the browser, outside HTTP access logs and referrers.
