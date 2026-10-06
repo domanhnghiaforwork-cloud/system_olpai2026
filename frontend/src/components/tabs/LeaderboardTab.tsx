@@ -3,10 +3,7 @@
 import React, { useState } from 'react';
 import { LeaderboardItem, OverallLeaderboardItem, Problem, User } from '@/types';
 import { 
-  Trophy, 
   RefreshCw, 
-  Flame, 
-  Globe, 
   Lock, 
   ShieldCheck, 
   AlertCircle,
@@ -59,34 +56,15 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-xs text-white ${
-              leaderboardType === 'overall' 
-                ? 'bg-amber-500'
-                : leaderboardType === 'private' 
-                ? 'bg-purple-600' 
-                : 'bg-blue-600'
-            }`}>
-              <Trophy className="w-4 h-4" />
-            </div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Bảng Xếp Hạng OLP AI KMA 2026
             </h2>
-            {leaderboardType === 'overall' ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">
-                <Trophy className="w-3 h-3 text-amber-600" />
-                <span>BẢNG TỔNG SẮP • TẤT CẢ ĐỀ</span>
-              </span>
-            ) : leaderboardType === 'private' ? (
+            {leaderboardType === 'private' ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
                 <ShieldCheck className="w-3 h-3 text-purple-600" />
                 <span>PRIVATE • ADMIN ONLY</span>
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <Globe className="w-3 h-3 text-emerald-600" />
-                <span>PUBLIC TEST</span>
-              </span>
-            )}
+            ) : null}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {leaderboardType === 'overall' ? (
@@ -164,15 +142,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
-            <Trophy className={`w-4 h-4 ${leaderboardType === 'overall' ? 'text-white' : 'text-amber-500'}`} />
             <span>Bảng Xếp Hạng Tổng</span>
-            <span className={`px-1.5 py-0.2 text-[9px] font-black rounded uppercase tracking-wider ${
-              leaderboardType === 'overall'
-                ? 'bg-amber-600 text-white'
-                : 'bg-amber-100 text-amber-800'
-            }`}>
-              Tất cả đề
-            </span>
           </button>
 
           {/* Public Leaderboard Button */}
@@ -185,8 +155,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
-            <Globe className="w-4 h-4 text-blue-600" />
-            <span>Public (Từng đề)</span>
+            <span>Public</span>
           </button>
 
           {/* Private Leaderboard Button */}
@@ -316,7 +285,6 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         <td className="py-4 px-6">
                           <div className="font-bold text-slate-900 flex items-center gap-2">
                             <span>{item.team_name}</span>
-                            {isTop1 && <Flame className="w-4 h-4 text-amber-500" />}
                           </div>
                           <div className="text-xs text-slate-500 mt-0.5">
                             {item.full_name} {item.username ? `(@${item.username})` : ''}
@@ -325,12 +293,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
                         {/* Tiến độ bài thi */}
                         <td className="py-4 px-6 text-center">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold ${
                             isCompletedAll
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              ? 'text-emerald-800'
                               : item.total_problems_submitted > 0
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : 'bg-slate-100 text-slate-500'
+                              ? 'text-blue-700'
+                              : 'text-slate-500'
                           }`}>
                             {isCompletedAll && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
                             <span>{item.total_problems_submitted}/{item.total_problems_count} đề</span>
@@ -349,16 +317,16 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                           </div>
 
                           {/* Chữ nhỏ điểm các thành phần theo từng đề */}
-                          <div className="flex flex-wrap items-center justify-end gap-1.5 mt-1.5">
+                          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 mt-1.5">
                             {item.components && item.components.map((comp) => {
                               const hasScore = comp.score !== null && comp.score !== undefined;
                               return (
                                 <span
                                   key={comp.problem_id}
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
+                                  className={`inline-flex items-center gap-1 text-[11px] font-mono ${
                                     hasScore
-                                      ? 'bg-blue-50/90 text-blue-900 border-blue-200/80 shadow-2xs font-medium'
-                                      : 'bg-slate-50 text-slate-400 border-dashed border-slate-200'
+                                      ? 'text-blue-900 font-medium'
+                                      : 'text-slate-400'
                                   }`}
                                   title={`${comp.problem_code} - ${comp.problem_title} (${comp.metric || 'Score'}): ${hasScore ? comp.score : 'Chưa nộp'}`}
                                 >
@@ -455,7 +423,6 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         <td className="py-4 px-6">
                           <div className="font-bold text-slate-900 flex items-center gap-2">
                             <span>{item.team_name}</span>
-                            {isTop1 && <Flame className="w-4 h-4 text-red-500" />}
                           </div>
                           <div className="text-xs text-slate-500 mt-0.5">{item.full_name}</div>
                         </td>

@@ -215,9 +215,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+            {/* <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
               <Database className="w-4 h-4" />
-            </div>
+            </div> */}
             <span>Kho Dữ Liệu Các Đề Thi OLP AI KMA 2026</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
