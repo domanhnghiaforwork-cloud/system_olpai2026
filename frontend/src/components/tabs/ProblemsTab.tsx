@@ -327,7 +327,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
         ) : (
           filteredProblems.map((prob) => {
             const isCV = prob.category === 'CV';
-            const pdfUrl = `${API_BASE}${prob.pdf_url || `/api/problems/${prob.id}/pdf`}`;
+            const hasPdf = Boolean(prob.pdf_url);
             const lockStatus = getItemLockStatus(prob.is_locked, prob.unlock_at, now);
             const isLockedForUser = !isAdmin && lockStatus.type !== 'UNLOCKED';
             const privLockStatus = getItemLockStatus(prob.private_is_locked, prob.private_unlock_at, now);
@@ -336,12 +336,12 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
               <div
                 key={prob.id}
                 onClick={() => {
-                  if (!isLockedForUser) {
+                  if (hasPdf && !isLockedForUser) {
                     setActivePdfProblem(prob);
                   }
                 }}
                 className={`group relative bg-white rounded-2xl border p-4 sm:px-6 sm:py-4.5 shadow-xs transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                  isLockedForUser
+                  isLockedForUser || !hasPdf
                     ? 'border-slate-200/80 bg-slate-50/50 cursor-not-allowed opacity-90'
                     : 'border-slate-200/90 hover:border-blue-400 hover:bg-slate-50/80 hover:shadow-md cursor-pointer'
                 }`}
@@ -373,7 +373,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                   {/* PDF indicator pill */}
                   <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 shrink-0">
                     <FileText className="w-3 h-3" />
-                    <span>PDF</span>
+                    <span>{hasPdf ? 'PDF' : 'Chưa có PDF'}</span>
                   </span>
 
                   {/* Evaluator Config indicator pill - Chỉ hiển thị với tài khoản Admin */}
@@ -419,7 +419,11 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                 {/* Right Side: View PDF button for User, Edit / Upload actions for Admin */}
                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                   {/* If Locked */}
-                  {lockStatus.type === 'LOCKED' ? (
+                  {!hasPdf ? (
+                    <span className="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-xs font-bold">
+                      Chưa có PDF
+                    </span>
+                  ) : lockStatus.type === 'LOCKED' ? (
                     <div className="flex items-center gap-2">
                       <div
                         className="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center gap-1.5 border border-slate-300 cursor-not-allowed select-none shadow-2xs"
@@ -721,7 +725,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
                     className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                   />
                   <span className="text-[10px] text-slate-400 mt-1 block">
-                    (Nếu không chọn, hệ thống sẽ tự động tạo file PDF mẫu theo thông tin đề thi)
+                    (Không bắt buộc. Nếu chưa chọn, đề sẽ hiển thị “Chưa có PDF”; bạn có thể tải lên sau.)
                   </span>
                 </div>
 

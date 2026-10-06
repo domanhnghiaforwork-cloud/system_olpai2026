@@ -23,7 +23,8 @@ from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, Use
 from app.auth_utils import create_access_token
 from app.evaluators.base import EvaluationValidationResult, EvaluationScoreResult
 from app.submission_jobs import claim_jobs, evaluate_job, finish_job
-from app.routers import training_notebooks
+from app.routers import problems, training_notebooks
+from app import pdf_utils
 
 
 class TestEvaluator:
@@ -49,6 +50,12 @@ class SubmissionQueueTest(unittest.TestCase):
         notebook_patch = patch.object(training_notebooks, 'NOTEBOOK_DIR', self.notebook_directory)
         notebook_patch.start()
         self.addCleanup(notebook_patch.stop)
+        self.pdf_directory = Path(work.name) / 'problem_pdfs'
+        self.pdf_directory.mkdir(exist_ok=True)
+        for module in (problems, pdf_utils):
+            pdf_patch = patch.object(module, 'PDF_DIR', str(self.pdf_directory))
+            pdf_patch.start()
+            self.addCleanup(pdf_patch.stop)
         with SessionLocal() as db:
             db.query(SubmissionJob).delete()
             db.query(Submission).delete()
@@ -391,6 +398,59 @@ class SubmissionQueueTest(unittest.TestCase):
                 self.notebook_upload()
         self.assertEqual(set(self.notebook_directory.glob('*.ipynb')), before)
         self.assertEqual(self.notebook_upload().status_code, 201)
+
+    def test_problem_without_upload_has_no_pdf_and_does_not_reuse_orphan(self):
+        code = 'NLP-' + uuid4().hex[:12]
+        orphan = self.pdf_directory / f'de_thi_{code.lower()}_nlp.pdf'
+        orphan.write_bytes(b'%PDF-1.4 old generated sample')
+        before = set(self.pdf_directory.iterdir())
+        response = self.client.post('/api/problems', headers=self.headers[2],
+                                    data={'code': code, 'title': 'No PDF uploaded', 'category': 'NLP'})
+        self.assertEqual(response.status_code, 200, response.text)
+        problem_id = response.json()['id']
+        details = self.client.get(f'/api/problems/{problem_id}')
+        listing = self.client.get('/api/problems?category=NLP')
+        listed = next(p for p in listing.json() if p['id'] == problem_id)
+        for data in (response.json(), details.json(), listed):
+            self.assertIsNone(data['pdf_filename'])
+            self.assertIsNone(data['pdf_url'])
+        self.assertEqual(self.client.get(f'/api/problems/{problem_id}/pdf').status_code, 404)
+        self.assertEqual(set(self.pdf_directory.iterdir()), before)
+        self.assertEqual(orphan.read_bytes(), b'%PDF-1.4 old generated sample')
+        with SessionLocal() as db:
+            self.assertIsNone(db.get(Problem, problem_id).pdf_filename)
+
+    def test_missing_attached_pdf_is_not_regenerated(self):
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).pdf_filename = 'missing.pdf'
+            db.commit()
+        before = set(self.pdf_directory.iterdir())
+        details = self.client.get(f'/api/problems/{self.problem_id}').json()
+        self.assertIsNone(details['pdf_url'])
+        self.assertIsNone(details['pdf_filename'])
+        self.assertEqual(self.client.get(f'/api/problems/{self.problem_id}/pdf').status_code, 404)
+        self.assertEqual(set(self.pdf_directory.iterdir()), before)
+        with SessionLocal() as db:
+            self.assertEqual(db.get(Problem, self.problem_id).pdf_filename, 'missing.pdf')
+
+    def test_uploaded_problem_pdf_is_served_on_creation_and_replacement(self):
+        code = 'NLP-' + uuid4().hex[:12]
+        content = b'%PDF-1.4 uploaded contest statement'
+        response = self.client.post('/api/problems', headers=self.headers[2],
+                                    data={'code': code, 'title': 'Uploaded PDF', 'category': 'NLP'},
+                                    files={'file': ('statement.pdf', content, 'application/pdf')})
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertTrue(data['pdf_filename'])
+        self.assertEqual(self.client.get(data['pdf_url']).content, content)
+        replacement = b'%PDF-1.4 updated contest statement'
+        response = self.client.post(f"/api/problems/{data['id']}/upload-pdf", headers=self.headers[2],
+                                    files={'file': ('updated.pdf', replacement, 'application/pdf')})
+        self.assertEqual(response.status_code, 200, response.text)
+        downloaded = self.client.get(response.json()['pdf_url'])
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertEqual(downloaded.headers['content-type'], 'application/pdf')
+        self.assertEqual(downloaded.content, replacement)
 
     def test_public_private_schedules_apply_identically_to_csv_and_notebooks(self):
         endpoint = f'/api/problems/{self.problem_id}'

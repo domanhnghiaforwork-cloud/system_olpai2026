@@ -2,23 +2,20 @@ import os
 import shutil
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..database import get_db
 from ..models import Problem, User
 from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate, EvaluatorInfo
-from ..pdf_utils import PDF_DIR, ensure_problem_pdf, generate_minimal_pdf, make_content_disposition, sanitize_filename
+from ..pdf_utils import PDF_DIR, resolve_problem_pdf, make_content_disposition, sanitize_filename
 from ..auth_utils import get_current_user_optional, require_admin
 from ..evaluators import list_available_evaluators
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
 
 def serialize_problem(p: Problem) -> ProblemResponse:
-    # Ensure PDF exists on disk
-    filename = ensure_problem_pdf(p.id, p.code, p.title, p.category, p.pdf_filename)
-    if p.pdf_filename != filename:
-        p.pdf_filename = filename
+    filename = resolve_problem_pdf(p.pdf_filename)
 
     raw_unlock = getattr(p, 'unlock_at', None)
     if raw_unlock is not None:
@@ -46,7 +43,7 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         short_description=p.short_description,
         description=p.description,
         pdf_filename=filename,
-        pdf_url=f"/api/problems/{p.id}/pdf",
+        pdf_url=f"/api/problems/{p.id}/pdf" if filename else None,
         metric=p.metric,
         deadline=p.deadline,
         max_daily_submissions=p.max_daily_submissions,
@@ -106,17 +103,11 @@ def view_problem_pdf(
         elif getattr(problem, 'is_locked', False):
             raise HTTPException(status_code=403, detail="Đề bài đang bị khóa bởi Quản trị viên.")
 
-    filename = ensure_problem_pdf(problem.id, problem.code, problem.title, problem.category, problem.pdf_filename)
+    filename = resolve_problem_pdf(problem.pdf_filename)
+    if not filename:
+        raise HTTPException(status_code=404, detail="Đề bài chưa có file PDF. Vui lòng tải lên PDF đề thi.")
     filepath = os.path.join(PDF_DIR, filename)
     content_disp = make_content_disposition("inline", filename)
-
-    if not os.path.exists(filepath):
-        pdf_data = generate_minimal_pdf(problem.title, problem.code, problem.category)
-        return Response(
-            content=pdf_data,
-            media_type="application/pdf",
-            headers={"Content-Disposition": content_disp}
-        )
 
     return FileResponse(
         path=filepath,
@@ -217,11 +208,6 @@ def create_problem(
     db.add(problem)
     db.commit()
     db.refresh(problem)
-
-    if not saved_filename:
-        saved_filename = ensure_problem_pdf(problem.id, problem.code, problem.title, problem.category)
-        problem.pdf_filename = saved_filename
-        db.commit()
 
     return serialize_problem(problem)
 

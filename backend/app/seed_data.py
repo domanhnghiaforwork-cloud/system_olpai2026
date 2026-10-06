@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 from .models import User, Problem, Dataset, Submission
-from .pdf_utils import ensure_problem_pdf
 from datetime import datetime, timedelta
 
 def init_seed_data(db: Session):
@@ -124,8 +123,7 @@ def init_seed_data(db: Session):
         metric="mAP",
         deadline="2026-11-20 23:59:59",
         max_daily_submissions=5,
-        evaluation_config="eval_1_cv_hico",
-        pdf_filename="de_thi_cv01_cv.pdf"
+        evaluation_config="eval_1_cv_hico"
     )
 
     p2 = Problem(
@@ -134,8 +132,7 @@ def init_seed_data(db: Session):
         category="NLP",
         metric="Macro F1-Score",
         deadline="2026-11-25 23:59:59",
-        max_daily_submissions=5,
-        pdf_filename="de_thi_nlp01_nlp.pdf"
+        max_daily_submissions=5
     )
 
     p3 = Problem(
@@ -144,8 +141,7 @@ def init_seed_data(db: Session):
         category="CV",
         metric="ACER (Error Rate)",
         deadline="2026-11-28 23:59:59",
-        max_daily_submissions=5,
-        pdf_filename="de_thi_cv02_cv.pdf"
+        max_daily_submissions=5
     )
 
     p4 = Problem(
@@ -154,16 +150,10 @@ def init_seed_data(db: Session):
         category="NLP",
         metric="F1-Score",
         deadline="2026-11-30 23:59:59",
-        max_daily_submissions=5,
-        pdf_filename="de_thi_nlp02_nlp.pdf"
+        max_daily_submissions=5
     )
 
     db.add_all([p1, p2, p3, p4])
-    db.commit()
-
-    # Generate initial sample PDFs for the seeded problems
-    for p in [p1, p2, p3, p4]:
-        p.pdf_filename = ensure_problem_pdf(p.id, p.code, p.title, p.category)
     db.commit()
 
     # 3. Seed Datasets

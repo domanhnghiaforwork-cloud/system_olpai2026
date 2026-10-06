@@ -37,8 +37,8 @@ export interface Problem {
   category: 'CV' | 'NLP';
   short_description?: string;
   description?: string;
-  pdf_filename?: string;
-  pdf_url?: string;
+  pdf_filename?: string | null;
+  pdf_url?: string | null;
   metric: string;
   deadline: string;
   max_daily_submissions: number;
