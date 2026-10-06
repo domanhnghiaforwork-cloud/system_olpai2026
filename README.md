@@ -132,3 +132,34 @@ Truy cập trình duyệt tại địa chỉ: [http://localhost:3000](http://loc
 - **Xanh nước biển (Ocean Blue `#0284c7`, `#1d4ed8`, `#0f172a`)**: Đại diện cho công nghệ, trí tuệ nhân tạo và sự ổn định.
 - **Đỏ KMA (`#dc2626`, `#b91c1c`)**: Màu cờ và thương hiệu truyền thống của Học viện Kỹ thuật Mật mã, dùng làm điểm nhấn cho các nút hành động, huy hiệu LIVE, và nút nộp bài.
 - **Trắng (`#ffffff`, `#f8fafc`)**: Mang lại vẻ sáng sủa, tinh tế, sạch sẽ và hiện đại.
+# Chạy production và hàng đợi chấm bài
+
+Frontend Docker chạy bản Next.js standalone production. Backend và `submission-worker`
+dùng cùng image; worker chấm ở hai tiến trình riêng, không giữ request API trong khi chấm.
+
+- `POST /api/submissions` nhận thêm `client_request_id` (UUID), trả HTTP 202 và `submission_id`.
+- `GET /api/submissions/{id}/status` theo dõi `QUEUED`, `PROCESSING`, `DONE`, `FAILED`.
+- `GET /api/submissions/by-request/{uuid}` xác nhận một yêu cầu khi mất phản hồi.
+- Gửi lại cùng UUID và nội dung trả đúng bài cũ; dùng lại UUID cho nội dung khác trả 409.
+- Bài đang chờ giữ một lượt nộp; lỗi định dạng/chấm điểm giải phóng lượt đó. Điểm private
+  vẫn chỉ dành cho admin. Trình duyệt lưu mã yêu cầu theo tài khoản để khôi phục theo dõi.
+
+`SUBMISSION_WORKER_CONCURRENCY` mặc định 2, hàng đợi tối đa 100 và file tối đa 95 MiB.
+Các giới hạn có thể cấu hình bằng `SUBMISSION_MAX_QUEUE_SIZE`, `SUBMISSION_MAX_FILE_BYTES`.
+Worker gia hạn lease và nhận lại bài bị gián đoạn sau khi tiến trình cũ mất kết nối.
+
+Database dùng volume `backend_data`; tệp dùng volume `backend_uploads` để tránh I/O qua
+bind mount Windows. Service `uploads-migrate` tự chép các tệp còn thiếu từ `backend/uploads`
+vào volume trước khi backend chạy, giữ nguyên các tệp cũ và không ghi đè tệp đã có.
+Sau chuyển đổi, tệp mới nằm trong Docker volume; thư mục host là nguồn dữ liệu cũ.
+Sao lưu cần bao gồm cả hai volume. Xuất file qua giao diện hoặc `docker cp` từ `/app/uploads`.
+
+Qua gateway, Nginx chuyển API trực tiếp đến backend, stream CSV và SSE. Frontend cũng
+hỗ trợ API rewrite khi truy cập trực tiếp. URL/SSO chatbot được đọc qua `/runtime-config`,
+nên chuyển chế độ local/public không cần build lại chỉ vì URL thay đổi.
+
+Khởi động tích hợp sau khi sửa mã:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ../gateway_oplai2026/start.ps1 -Build -LocalOnly
+```

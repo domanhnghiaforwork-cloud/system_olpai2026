@@ -5,6 +5,8 @@ const customDevOrigins = process.env.ALLOWED_DEV_ORIGINS
   : [];
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
+  experimental: { proxyClientMaxBodySize: '100mb', proxyTimeout: 600_000 },
   allowedDevOrigins: [
     '*.ngrok-free.dev',
     '*.ngrok-free.app',

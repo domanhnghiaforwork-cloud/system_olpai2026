@@ -117,6 +117,20 @@ export interface AdminSubmission {
   download_url: string;
 }
 
+export interface SubmissionJobResult {
+  accepted: boolean;
+  submission_id: number;
+  client_request_id: string;
+  job_status: 'QUEUED' | 'PROCESSING' | 'DONE' | 'FAILED';
+  success: boolean | null;
+  submission_type: 'public' | 'private';
+  filename: string;
+  score: number | null;
+  result_line: string;
+  step1_validation?: { status: string; message: string; errors?: string[]; row_count?: number };
+  step2_scoring?: { status: string; message: string; score?: number | null };
+}
+
 export interface LeaderboardItem {
   rank: number;
   user_id: number;

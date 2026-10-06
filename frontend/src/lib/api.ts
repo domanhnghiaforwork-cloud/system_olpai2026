@@ -9,7 +9,8 @@ import {
   AdminStats, 
   EvaluatorOption,
   BatchCreateUserParams,
-  BatchCreateUserResponse
+  BatchCreateUserResponse,
+  SubmissionJobResult,
 } from '@/types';
 import { resetChatbotSession, waitForChatbotSessionReset } from './chatbotSession';
 
@@ -77,12 +78,16 @@ export async function fetchCurrentUser(): Promise<User | null> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, { 
       cache: 'no-store',
-      headers: getAuthHeaders() 
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(15_000),
     });
     if (getAuthToken() !== token) return null;
     if (!res.ok) {
-      clearAuthToken();
-      return null;
+      if (res.status === 401) {
+        clearAuthToken();
+        return null;
+      }
+      throw new Error('Chưa đọc được thông tin đăng nhập. Vui lòng thử lại.');
     }
     const data = await res.json();
     if (getAuthToken() !== token) return null;
@@ -91,8 +96,9 @@ export async function fetchCurrentUser(): Promise<User | null> {
       return null;
     }
     return data;
-  } catch {
-    return null;
+  } catch (error) {
+    if (getAuthToken() !== token) return null;
+    throw error;
   }
 }
 
@@ -100,7 +106,8 @@ export async function fetchUsers(): Promise<User[]> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/users`, { 
       cache: 'no-store',
-      headers: getAuthHeaders() 
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return [];
     return res.json();
@@ -157,7 +164,8 @@ export async function fetchProblems(category?: string): Promise<Problem[]> {
     : `${API_BASE}/api/problems`;
   const res = await fetch(url, { 
     cache: 'no-store',
-    headers: getAuthHeaders() 
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error('Failed to fetch problems');
   return res.json();
@@ -228,7 +236,8 @@ export async function fetchDatasets(problemId?: number): Promise<Dataset[]> {
   const url = problemId ? `${API_BASE}/api/datasets?problem_id=${problemId}` : `${API_BASE}/api/datasets`;
   const res = await fetch(url, { 
     cache: 'no-store',
-    headers: getAuthHeaders() 
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error('Failed to fetch datasets');
   return res.json();
@@ -284,32 +293,56 @@ export async function fetchSubmissions(problemId?: number): Promise<Submission[]
   const url = problemId ? `${API_BASE}/api/submissions?problem_id=${problemId}` : `${API_BASE}/api/submissions`;
   const res = await fetch(url, { 
     cache: 'no-store',
-    headers: getAuthHeaders() 
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Chưa tải được lịch sử bài nộp.');
   return res.json();
 }
 
 export async function submitSolution(
   problemId: number, 
   file: File, 
-  submissionType: 'public' | 'private' = 'public'
-): Promise<any> {
+  submissionType: 'public' | 'private' = 'public',
+  clientRequestId: string = crypto.randomUUID(),
+  signal?: AbortSignal,
+): Promise<SubmissionJobResult> {
   const formData = new FormData();
   formData.append('problem_id', problemId.toString());
   formData.append('submission_type', submissionType);
   formData.append('file', file);
+  formData.append('client_request_id', clientRequestId);
 
   const res = await fetch(`${API_BASE}/api/submissions`, {
     method: 'POST',
     headers: getAuthHeaders(false),
     body: formData,
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(180_000)]) : AbortSignal.timeout(180_000),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Lỗi khi gửi bài nộp');
   }
+  return res.json();
+}
+
+export async function getSubmissionStatus(id: number, signal?: AbortSignal): Promise<SubmissionJobResult> {
+  const res = await fetch(`${API_BASE}/api/submissions/${id}/status`, {
+    cache: 'no-store', headers: getAuthHeaders(),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Không đọc được trạng thái bài nộp (${res.status}).`);
+  return res.json();
+}
+
+export async function findSubmissionByRequest(requestId: string, signal?: AbortSignal): Promise<SubmissionJobResult | null> {
+  const res = await fetch(`${API_BASE}/api/submissions/by-request/${encodeURIComponent(requestId)}`, {
+    cache: 'no-store', headers: getAuthHeaders(),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Không xác nhận được bài nộp (${res.status}).`);
   return res.json();
 }
 
@@ -324,7 +357,8 @@ export async function fetchLeaderboard(
   const url = `${API_BASE}/api/leaderboard?${params.toString()}`;
   const res = await fetch(url, { 
     cache: 'no-store',
-    headers: getAuthHeaders() 
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -337,7 +371,8 @@ export async function fetchOverallLeaderboard(): Promise<OverallLeaderboardItem[
   const url = `${API_BASE}/api/leaderboard/overall`;
   const res = await fetch(url, { 
     cache: 'no-store',
-    headers: getAuthHeaders() 
+    headers: getAuthHeaders(),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -346,7 +381,9 @@ export async function fetchOverallLeaderboard(): Promise<OverallLeaderboardItem[
   return res.json();
 }
 
-export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_submissions: any[] }> {
+export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_submissions: {
+  id: number; user: string; problem: string; score: number | null; status: string; time: string;
+}[] }> {
   const res = await fetch(`${API_BASE}/api/admin/overview`, { 
     cache: 'no-store',
     headers: getAuthHeaders() 

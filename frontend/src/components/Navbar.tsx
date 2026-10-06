@@ -3,7 +3,7 @@
 import React from 'react';
 import { User } from '@/types';
 import { createChatbotTicket, getAuthToken } from '@/lib/api';
-import { getChatbotUrl } from '@/lib/chatbotSession';
+import { getChatbotUrl, isChatbotSsoEnabled } from '@/lib/chatbotSession';
 import { 
   Trophy, 
   FileCode2, 
@@ -43,7 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isAdmin = currentUser?.role === 'admin';
 
   const openChatbot = async (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!currentUser || process.env.NEXT_PUBLIC_CHATBOT_SSO_ENABLED !== 'true') return;
+    if (!currentUser || !isChatbotSsoEnabled()) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     // Open synchronously so browser popup protection accepts the user's click.

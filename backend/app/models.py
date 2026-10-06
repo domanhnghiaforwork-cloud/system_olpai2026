@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -76,6 +76,7 @@ class Dataset(Base):
 
 class Submission(Base):
     __tablename__ = "submissions"
+    __table_args__ = (Index("ix_submissions_quota", "user_id", "problem_id", "submission_type", "status"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -91,3 +92,29 @@ class Submission(Base):
 
     user = relationship("User", back_populates="submissions")
     problem = relationship("Problem", back_populates="submissions")
+    job = relationship("SubmissionJob", back_populates="submission", uselist=False, cascade="all, delete-orphan")
+
+
+class SubmissionJob(Base):
+    """Durable queue entry committed with the reserved submission attempt."""
+    __tablename__ = "submission_jobs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_request_id", name="uq_submission_job_client"),
+        Index("ix_submission_jobs_claim", "state", "lease_until", "id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    submission_id = Column(Integer, ForeignKey("submissions.id", ondelete="CASCADE"), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    client_request_id = Column(String(36), nullable=False)
+    payload_sha256 = Column(String(64), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    evaluation_config = Column(String(100), nullable=False)
+    state = Column(String(20), default="QUEUED", nullable=False)
+    claim_token = Column(String(36), nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    submission = relationship("Submission", back_populates="job", lazy="joined")

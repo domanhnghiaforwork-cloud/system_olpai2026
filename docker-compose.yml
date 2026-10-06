@@ -1,7 +1,6 @@
-version: '3.8'
-
 services:
   backend:
+    image: system_olpai2026-backend:${IMAGE_TAG:-latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -9,35 +8,74 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - backend_uploads:/app/uploads
       - backend_data:/app/data
     environment:
       - DATABASE_PATH=/app/data/olpai2026.db
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
       - JWT_SECRET_KEY=olp_ai_kma_2026_super_secret_jwt_key_secure_contest
-      - SEED_DEMO_DATA=true
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    depends_on:
+      uploads-migrate:
+        condition: service_completed_successfully
+
+  uploads-migrate:
+    image: system_olpai2026-backend:${IMAGE_TAG:-latest}
+    command: ["python", "-m", "app.migrate_uploads"]
+    volumes:
+      - ./backend/uploads:/legacy:ro
+      - backend_uploads:/app/uploads
+    restart: "no"
+
+  submission-worker:
+    image: system_olpai2026-backend:${IMAGE_TAG:-latest}
+    command: ["python", "-m", "app.submission_worker"]
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_data:/app/data
+    environment:
+      DATABASE_PATH: /app/data/olpai2026.db
+      SUBMISSION_WORKER_CONCURRENCY: ${SUBMISSION_WORKER_CONCURRENCY:-2}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      backend:
+        condition: service_healthy
+    init: true
+    stop_grace_period: 90s
     restart: unless-stopped
 
   frontend:
+    image: system_olpai2026-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: olp_ai_kma_frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     environment:
       - INTERNAL_BACKEND_URL=http://backend:8000
       - NEXT_PUBLIC_API_URL=
       - ALLOWED_DEV_ORIGINS=*.ngrok-free.dev,*.ngrok-free.app,*.ngrok.app,*.ngrok.io,larcher-brecken-palynologically.ngrok-free.dev
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
 
 volumes:
   backend_data:
+  backend_uploads:

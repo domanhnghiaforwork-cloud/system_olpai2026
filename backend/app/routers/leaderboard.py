@@ -1,7 +1,7 @@
 import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_, select
 from typing import List, Optional
 from ..database import get_db
 from ..models import Submission, User, Problem
@@ -10,221 +10,96 @@ from ..auth_utils import get_current_user_optional
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
+
+def best_submission_rows(db, problem_ids, submission_type):
+    type_filter = Submission.submission_type == submission_type
+    if submission_type == "public":
+        type_filter = or_(type_filter, Submission.submission_type.is_(None))
+    # Rank inside SQL and load one row per user/problem, not every historical
+    # submission as an ORM object. Equal scores keep the earliest submission.
+    ranked = select(
+        Submission.id.label("submission_id"), Submission.user_id, Submission.problem_id,
+        Submission.score, Submission.created_at,
+        func.row_number().over(
+            partition_by=(Submission.user_id, Submission.problem_id),
+            order_by=(Submission.score.desc(), Submission.created_at.asc(), Submission.id.asc()),
+        ).label("position"),
+        func.max(Submission.created_at).over(partition_by=Submission.user_id).label("last_time"),
+        func.count(Submission.id).over(partition_by=(Submission.user_id, Submission.problem_id)).label("total_submissions"),
+    ).where(
+        Submission.problem_id.in_(problem_ids), type_filter,
+        Submission.status.in_(("HỢP LỆ", "SUCCESS")), Submission.score.isnot(None),
+    ).subquery()
+    return db.execute(select(ranked).where(ranked.c.position == 1)).mappings().all()
+
+
 @router.get("/overall", response_model=List[OverallLeaderboardItem])
 def get_overall_leaderboard(db: Session = Depends(get_db)):
-    """
-    Bảng xếp hạng tổng (Overall Leaderboard):
-    Tính tổng tất cả điểm Public cao nhất của tất cả các đề hiện có của mỗi thí sinh để xếp hạng,
-    đồng thời hiển thị điểm số chi tiết từng đề thành phần.
-    """
     problems = db.query(Problem).order_by(Problem.id.asc()).all()
     if not problems:
         return []
-
-    problem_ids = [p.id for p in problems]
-
-    submissions = (
-        db.query(Submission)
-        .filter(
-            Submission.problem_id.in_(problem_ids),
-            Submission.status.in_(["HỢP LỆ", "SUCCESS"]),
-            Submission.score.isnot(None),
-            or_(Submission.submission_type == "public", Submission.submission_type.is_(None))
-        )
-        .order_by(Submission.created_at.asc())
-        .all()
-    )
-
-    user_prob_stats = {}
-
-    for sub in submissions:
-        uid = sub.user_id
-        pid = sub.problem_id
-
-        if uid not in user_prob_stats:
-            user_prob_stats[uid] = {
-                "user": sub.user,
-                "scores": {},
-                "last_time": sub.created_at
-            }
-
-        if sub.created_at:
-            if not user_prob_stats[uid]["last_time"] or sub.created_at > user_prob_stats[uid]["last_time"]:
-                user_prob_stats[uid]["last_time"] = sub.created_at
-
-        if pid not in user_prob_stats[uid]["scores"]:
-            user_prob_stats[uid]["scores"][pid] = {
-                "best_score": sub.score,
-                "sub_id": sub.id,
-                "submitted_at": sub.created_at
-            }
-        else:
-            if sub.score > user_prob_stats[uid]["scores"][pid]["best_score"]:
-                user_prob_stats[uid]["scores"][pid] = {
-                    "best_score": sub.score,
-                    "sub_id": sub.id,
-                    "submitted_at": sub.created_at
-                }
-
-    user_results = []
-    total_problems_count = len(problems)
-
-    for uid, data in user_prob_stats.items():
-        u = data["user"]
-        scores_by_pid = data["scores"]
-
+    rows = best_submission_rows(db, [p.id for p in problems], "public")
+    users = {u.id: u for u in db.query(User).filter(User.id.in_({r["user_id"] for r in rows})).all()}
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["user_id"], {})[row["problem_id"]] = row
+    items = []
+    for uid, scores in grouped.items():
+        user = users.get(uid)
         components = []
-        total_score = 0.0
-        submitted_count = 0
+        total = 0.0
+        for problem in problems:
+            row = scores.get(problem.id)
+            score = round(row["score"], 4) if row else None
+            if score is not None:
+                total += score
+            components.append(ProblemScoreComponent(
+                problem_id=problem.id, problem_code=problem.code, problem_title=problem.title,
+                metric=problem.metric, score=score,
+                submission_id=row["submission_id"] if row else None,
+                submitted_at=row["created_at"] if row else None,
+            ))
+        items.append(OverallLeaderboardItem(
+            rank=0, user_id=user.id if user else 0,
+            full_name=user.full_name if user else "Thí sinh",
+            team_name=(user.team_name or user.username) if user else "Đội thi",
+            username=user.username if user else None, total_score=round(total, 4),
+            total_problems_submitted=len(scores), total_problems_count=len(problems),
+            components=components, last_submission_time=next(iter(scores.values()))["last_time"],
+        ))
+    items.sort(key=lambda item: (-item.total_score, -item.total_problems_submitted,
+                               item.last_submission_time or datetime.datetime.max))
+    for rank, item in enumerate(items, 1):
+        item.rank = rank
+    return items
 
-        for p in problems:
-            p_stat = scores_by_pid.get(p.id)
-            if p_stat:
-                score_val = round(p_stat["best_score"], 4)
-                total_score += score_val
-                submitted_count += 1
-                components.append(
-                    ProblemScoreComponent(
-                        problem_id=p.id,
-                        problem_code=p.code,
-                        problem_title=p.title,
-                        metric=p.metric,
-                        score=score_val,
-                        submission_id=p_stat["sub_id"],
-                        submitted_at=p_stat["submitted_at"]
-                    )
-                )
-            else:
-                components.append(
-                    ProblemScoreComponent(
-                        problem_id=p.id,
-                        problem_code=p.code,
-                        problem_title=p.title,
-                        metric=p.metric,
-                        score=None,
-                        submission_id=None,
-                        submitted_at=None
-                    )
-                )
-
-        user_results.append({
-            "user": u,
-            "total_score": round(total_score, 4),
-            "submitted_count": submitted_count,
-            "components": components,
-            "last_time": data["last_time"]
-        })
-
-    user_results.sort(
-        key=lambda x: (
-            -x["total_score"],
-            -x["submitted_count"],
-            x["last_time"] if x["last_time"] else datetime.datetime.max
-        )
-    )
-
-    overall_leaderboard = []
-    for rank, item in enumerate(user_results, start=1):
-        u = item["user"]
-        overall_leaderboard.append(
-            OverallLeaderboardItem(
-                rank=rank,
-                user_id=u.id if u else 0,
-                full_name=u.full_name if u else "Thí sinh",
-                team_name=(u.team_name or u.username) if u else "Đội thi",
-                username=u.username if u else None,
-                total_score=item["total_score"],
-                total_problems_submitted=item["submitted_count"],
-                total_problems_count=total_problems_count,
-                components=item["components"],
-                last_submission_time=item["last_time"]
-            )
-        )
-
-    return overall_leaderboard
 
 @router.get("", response_model=List[LeaderboardItem])
 def get_leaderboard(
-    problem_code: Optional[str] = Query(None, description="Mã đề bài, ví dụ CV-01"),
-    type: str = Query("public", description="Loại bảng xếp hạng: 'public' hoặc 'private'"),
+    problem_code: Optional[str] = Query(None),
+    type: str = Query("public"),
     current_user: Optional[User] = Depends(get_current_user_optional),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    clean_type = "private" if type.strip().lower() == "private" else "public"
-
-    # KIỂM TRA QUYỀN: Bảng xếp hạng Private CHỈ hiển thị cho tài khoản Quản trị viên (Admin)
-    if clean_type == "private":
-        if not current_user or current_user.role != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Bảng xếp hạng Private chỉ hiển thị cho tài khoản Quản trị viên (Admin)."
-            )
-
-    # Tìm đề bài theo mã đề, nếu không có lấy đề đầu tiên
-    query_problem = None
-    if problem_code:
-        query_problem = db.query(Problem).filter(Problem.code == problem_code).first()
-    if not query_problem:
-        query_problem = db.query(Problem).first()
-
-    if not query_problem:
+    split = "private" if type.strip().lower() == "private" else "public"
+    if split == "private" and (not current_user or current_user.role != "admin"):
+        raise HTTPException(403, "Bảng xếp hạng Private chỉ hiển thị cho tài khoản Quản trị viên (Admin).")
+    problem = db.query(Problem).filter_by(code=problem_code).first() if problem_code else None
+    problem = problem or db.query(Problem).first()
+    if not problem:
         return []
-
-    # Lọc bài nộp theo loại bảng xếp hạng (public hoặc private)
-    if clean_type == "private":
-        type_filter = (Submission.submission_type == "private")
-    else:
-        type_filter = or_(Submission.submission_type == "public", Submission.submission_type.is_(None))
-
-    submissions = (
-        db.query(Submission)
-        .filter(
-            Submission.problem_id == query_problem.id,
-            Submission.status.in_(["HỢP LỆ", "SUCCESS"]),
-            Submission.score.isnot(None),
-            type_filter
-        )
-        .all()
-    )
-
-    # Nhóm theo từng thí sinh (user_id) để lấy điểm số cao nhất
-    user_stats = {}
-    for sub in submissions:
-        uid = sub.user_id
-        if uid not in user_stats:
-            user_stats[uid] = {
-                "user": sub.user,
-                "best_score": sub.score,
-                "total_submissions": 0,
-                "last_submission_time": sub.created_at
-            }
-        user_stats[uid]["total_submissions"] += 1
-        if sub.score > user_stats[uid]["best_score"]:
-            user_stats[uid]["best_score"] = sub.score
-        if sub.created_at and user_stats[uid]["last_submission_time"] and sub.created_at > user_stats[uid]["last_submission_time"]:
-            user_stats[uid]["last_submission_time"] = sub.created_at
-
-    # Sắp xếp theo điểm giảm dần, thời gian nộp mới nhất
-    sorted_users = sorted(
-        user_stats.values(),
-        key=lambda x: (-x["best_score"], x["last_submission_time"])
-    )
-
-    leaderboard = []
-    for rank, item in enumerate(sorted_users, start=1):
-        u = item["user"]
-        leaderboard.append(
-            LeaderboardItem(
-                rank=rank,
-                user_id=u.id if u else 0,
-                full_name=u.full_name if u else "User",
-                team_name=(u.team_name or u.username) if u else "Team",
-                problem_code=query_problem.code,
-                best_score=round(item["best_score"], 4),
-                total_submissions=item["total_submissions"],
-                last_submission_time=item["last_submission_time"],
-                submission_type=clean_type
-            )
-        )
-
-    return leaderboard
+    rows = best_submission_rows(db, [problem.id], split)
+    users = {u.id: u for u in db.query(User).filter(User.id.in_({r["user_id"] for r in rows})).all()}
+    rows.sort(key=lambda row: (-row["score"], row["last_time"]))
+    items = []
+    for rank, row in enumerate(rows, 1):
+        user = users.get(row["user_id"])
+        items.append(LeaderboardItem(
+            rank=rank, user_id=user.id if user else 0,
+            full_name=user.full_name if user else "User",
+            team_name=(user.team_name or user.username) if user else "Team",
+            problem_code=problem.code, best_score=round(row["score"], 4),
+            total_submissions=row["total_submissions"], last_submission_time=row["last_time"],
+            submission_type=split,
+        ))
+    return items

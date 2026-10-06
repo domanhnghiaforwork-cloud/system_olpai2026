@@ -4,6 +4,7 @@ from .database import engine, Base, SessionLocal
 from .seed_data import init_seed_data
 from .chatbot_provisioning import provisioning_lifespan
 from .routers import auth, problems, submissions, leaderboard, datasets, admin
+from .upload_limits import SubmissionBodyLimit
 
 from sqlalchemy import inspect, text
 
@@ -44,6 +45,11 @@ with engine.connect() as conn:
         except Exception:
             pass
 
+# create_all does not add indexes to an already existing table.
+from .models import Submission
+for index in Submission.__table__.indexes:
+    index.create(bind=engine, checkfirst=True)
+
 # Seed database on start
 with SessionLocal() as db:
     init_seed_data(db)
@@ -71,6 +77,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SubmissionBodyLimit)
 
 # Include routers
 app.include_router(auth.router)

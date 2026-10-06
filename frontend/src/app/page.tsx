@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { loadChatbotRuntimeConfig } from '@/lib/chatbotSession';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { HomeTab } from '@/components/tabs/HomeTab';
@@ -16,13 +17,13 @@ import {
   fetchCurrentUser, 
   fetchUsers, 
   switchUser, 
-  loginUser,
   logoutUser,
   fetchProblems, 
   fetchDatasets, 
   fetchSubmissions, 
   fetchLeaderboard,
-  fetchOverallLeaderboard
+  fetchOverallLeaderboard,
+  getAuthToken,
 } from '@/lib/api';
 import { Loader2, AlertCircle } from 'lucide-react';
 
@@ -44,64 +45,76 @@ export default function App() {
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const clearUserData = useCallback(() => {
+    setSubmissions([]);
+    setUsers([]);
+    setLeaderboard([]);
+    setOverallLeaderboard([]);
+  }, []);
+
   // Initial load
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
+    let token = getAuthToken();
     try {
       setIsLoading(true);
       setErrorMsg(null);
 
-      // Concurrent fetch with 6s timeout safety
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 6000)
-      );
-
-      const fetchAll = Promise.all([
-        fetchCurrentUser().catch(() => null),
-        fetchUsers().catch(() => []),
-        fetchProblems().catch(() => []),
-        fetchDatasets().catch(() => []),
-        fetchSubmissions().catch(() => []),
+      const [uRes] = await Promise.all([fetchCurrentUser(), loadChatbotRuntimeConfig()]);
+      if (getAuthToken() !== token && getAuthToken() !== null) return;
+      token = getAuthToken();
+      clearUserData();
+      if (uRes?.role !== 'admin') setLeaderboardType((previous) => previous === 'private' ? 'public' : previous);
+      setCurrentUser(uRes);
+      const [probResult, dataResult, subResult, usersResult] = await Promise.allSettled([
+        fetchProblems(), fetchDatasets(),
+        uRes ? fetchSubmissions() : Promise.resolve([]),
+        uRes?.role === 'admin' ? fetchUsers() : Promise.resolve([]),
       ]);
-
-      const [uRes, allUsersRes, probRes, dataRes, subRes] = await Promise.race([fetchAll, timeoutPromise]);
-
-      if (uRes) setCurrentUser(uRes);
-      if (allUsersRes.length > 0) setUsers(allUsersRes);
-      if (probRes.length > 0) {
-        setProblems(probRes);
-        setSelectedSubmitProblemId(probRes[0].id);
-        setSelectedLeaderboardCode(probRes[0].code);
+      if (getAuthToken() !== token) return;
+      if (probResult.status === 'fulfilled') {
+        setProblems(probResult.value);
+        if (probResult.value.length > 0) {
+          setSelectedSubmitProblemId(probResult.value[0].id);
+          setSelectedLeaderboardCode(probResult.value[0].code);
+        }
       }
-      setDatasets(dataRes);
-      setSubmissions(subRes);
+      if (dataResult.status === 'fulfilled') setDatasets(dataResult.value);
+      if (subResult.status === 'fulfilled') setSubmissions(subResult.value);
+      if (usersResult.status === 'fulfilled') setUsers(usersResult.value);
+      if ([probResult, dataResult, subResult, usersResult].some((result) => result.status === 'rejected')) {
+        setErrorMsg('Một phần dữ liệu chưa tải được. Bạn có thể tiếp tục sử dụng và bấm Thử lại.');
+      }
+      const probRes = probResult.status === 'fulfilled' ? probResult.value : [];
 
       // Load initial leaderboards (both overall and first problem's public)
       fetchOverallLeaderboard()
-        .then(setOverallLeaderboard)
+        .then((value) => { if (getAuthToken() === token) setOverallLeaderboard(value); })
         .catch(() => []);
 
       if (probRes.length > 0) {
         fetchLeaderboard(probRes[0].code, 'public')
-          .then(setLeaderboard)
+          .then((value) => { if (getAuthToken() === token) setLeaderboard(value); })
           .catch(() => []);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setErrorMsg('Không thể kết nối đến máy chủ backend (FastAPI). Vui lòng kiểm tra lại dịch vụ.');
+      setErrorMsg('Chưa tải được dữ liệu. Vui lòng bấm Thử lại.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [clearUserData]);
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    const timer = setTimeout(() => { void loadInitialData(); }, 0);
+    return () => clearTimeout(timer);
+  }, [loadInitialData]);
 
   // Update leaderboard when problem code or type changes
   const handleLeaderboardChange = async (
     code: string, 
     type: 'overall' | 'public' | 'private' = leaderboardType
   ) => {
+    const token = getAuthToken();
     try {
       setSelectedLeaderboardCode(code);
       setLeaderboardType(type);
@@ -109,16 +122,20 @@ export default function App() {
 
       if (type === 'overall') {
         const overall = await fetchOverallLeaderboard();
+        if (getAuthToken() !== token) return;
         setOverallLeaderboard(overall);
       } else {
         const lb = await fetchLeaderboard(code, type);
+        if (getAuthToken() !== token) return;
         setLeaderboard(lb);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (getAuthToken() !== token) return;
       console.error(err);
       if (type === 'private') {
         setLeaderboardType('public');
         const fallbackLb = await fetchLeaderboard(code, 'public').catch(() => []);
+        if (getAuthToken() !== token) return;
         setLeaderboard(fallbackLb);
       }
     } finally {
@@ -130,73 +147,47 @@ export default function App() {
     handleLeaderboardChange(selectedLeaderboardCode, type);
   };
 
-  // Switch active user / role
-  const handleSwitchUser = async (userId: number) => {
-    try {
-      const user = await switchUser(userId);
-      setCurrentUser(user);
-      const nextType = (user.role === 'admin' && leaderboardType === 'private') 
-        ? 'private' 
-        : leaderboardType === 'overall'
-        ? 'overall'
-        : 'public';
-      setLeaderboardType(nextType);
-      
-      const fetchLb = nextType === 'overall'
-        ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
-        : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
-
-      const [subs] = await Promise.all([
-        fetchSubmissions(),
-        fetchLb,
-      ]);
-      setSubmissions(subs);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // When user logs in via HomeTab form
   const handleLoginSuccess = async (user: User) => {
+    const token = getAuthToken();
     setCurrentUser(user);
-    const nextType = (user.role === 'admin' && leaderboardType === 'private') 
-      ? 'private' 
-      : leaderboardType === 'overall'
-      ? 'overall'
-      : 'public';
+    clearUserData();
+    const nextType = user.role === 'admin' && leaderboardType === 'private'
+      ? 'private' : leaderboardType === 'overall' ? 'overall' : 'public';
     setLeaderboardType(nextType);
-    
     const fetchLb = nextType === 'overall'
-      ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
-      : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
-
-    const [subs] = await Promise.all([
-      fetchSubmissions(),
-      fetchLb,
+      ? fetchOverallLeaderboard().then((value) => { if (getAuthToken() === token) setOverallLeaderboard(value); })
+      : fetchLeaderboard(selectedLeaderboardCode, nextType).then((value) => { if (getAuthToken() === token) setLeaderboard(value); });
+    const [subs, lb, allUsers] = await Promise.allSettled([
+      fetchSubmissions(), fetchLb, user.role === 'admin' ? fetchUsers() : Promise.resolve([]),
     ]);
-    setSubmissions(subs);
+    if (getAuthToken() !== token) return;
+    if (subs.status === 'fulfilled') setSubmissions(subs.value);
+    if (allUsers.status === 'fulfilled') setUsers(allUsers.value);
+    if ([subs, lb, allUsers].some((value) => value.status === 'rejected')) {
+      setErrorMsg('Đăng nhập thành công; một phần dữ liệu chưa tải được. Vui lòng bấm Thử lại.');
+    }
   };
 
-  // When user logs out
-  const handleLogout = async () => {
-    try {
-      await logoutUser();
-      setCurrentUser(null);
-      const nextType = leaderboardType === 'private' ? 'public' : leaderboardType;
-      setLeaderboardType(nextType);
-      
-      const fetchLb = nextType === 'overall'
-        ? fetchOverallLeaderboard().then(setOverallLeaderboard).catch(() => [])
-        : fetchLeaderboard(selectedLeaderboardCode, nextType).then(setLeaderboard).catch(() => []);
+  const handleSwitchUser = async (userId: number) => {
+    try { await handleLoginSuccess(await switchUser(userId)); }
+    catch (error) { console.error(error); }
+  };
 
-      const [subs] = await Promise.all([
-        fetchSubmissions(),
-        fetchLb,
-      ]);
-      setSubmissions(subs);
-    } catch (err) {
-      console.error(err);
-    }
+  const handleLogout = async () => {
+    // Clear private data immediately; a slow logout response must not keep it visible.
+    const pending = logoutUser();
+    setCurrentUser(null);
+    clearUserData();
+    const nextType = leaderboardType === 'private' ? 'public' : leaderboardType;
+    setLeaderboardType(nextType);
+    await pending;
+    if (getAuthToken()) return;
+    const publicData = nextType === 'overall'
+      ? await fetchOverallLeaderboard().catch(() => [])
+      : await fetchLeaderboard(selectedLeaderboardCode, 'public').catch(() => []);
+    if (getAuthToken()) return;
+    if (nextType === 'overall') setOverallLeaderboard(publicData as OverallLeaderboardItem[]);
+    else setLeaderboard(publicData as LeaderboardItem[]);
   };
 
   // When user clicks "Nộp bài" on a problem card
@@ -207,15 +198,22 @@ export default function App() {
 
   // Refresh submissions & leaderboard after user submits
   const handleSubmissionSuccess = async () => {
-    const lbType = leaderboardType === 'private' ? 'private' : 'public';
+    const token = getAuthToken();
+    if (!token) return;
+    const lbType = currentUser?.role === 'admin' && leaderboardType === 'private' ? 'private' : 'public';
+    try {
     const [subs, lb, overall] = await Promise.all([
       fetchSubmissions(),
       fetchLeaderboard(selectedLeaderboardCode, lbType).catch(() => []),
       fetchOverallLeaderboard().catch(() => []),
     ]);
+    if (getAuthToken() !== token) return;
     setSubmissions(subs);
     setLeaderboard(lb);
     setOverallLeaderboard(overall);
+    } catch {
+      if (getAuthToken() === token) setErrorMsg('Bài đã được ghi nhận; chưa tải lại được lịch sử. Vui lòng bấm Thử lại.');
+    }
   };
 
   // Check guest and role-based permissions
@@ -335,6 +333,7 @@ export default function App() {
 
             {currentTab === 'submit' && (
               <SubmitTab
+                key={`${currentUser?.id ?? 'guest'}:${currentUser?.role ?? 'guest'}`}
                 problems={problems}
                 submissions={submissions}
                 currentUser={currentUser}

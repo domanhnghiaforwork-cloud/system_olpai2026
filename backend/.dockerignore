@@ -8,3 +8,7 @@ env/
 .pytest_cache/
 .coverage
 uploads/
+data/
+*.db
+*.db-wal
+*.db-shm

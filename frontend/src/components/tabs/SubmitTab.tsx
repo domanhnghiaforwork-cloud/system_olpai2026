@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Problem, Submission, User } from '@/types';
+import { Problem, Submission, User, SubmissionJobResult } from '@/types';
 import { 
   UploadCloud, 
   FileCheck, 
@@ -22,7 +22,8 @@ import {
   Trophy,
   Download
 } from 'lucide-react';
-import { submitSolution, updateProblem, getCandidateSubmissionDownloadUrl } from '@/lib/api';
+import { updateProblem, getCandidateSubmissionDownloadUrl } from '@/lib/api';
+import { prepareSubmission, readPendingSubmission, sendAndTrackSubmission, trackSubmission } from '@/lib/submissionTracker';
 import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
 
 interface SubmitTabProps {
@@ -58,6 +59,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   // Pipeline evaluation states
   const [pipelineStep, setPipelineStep] = useState<PipelineStep>('idle');
+  const isWorking = pipelineStep === 'step1' || pipelineStep === 'step2';
   const [step1Msg, setStep1Msg] = useState<string>('');
   const [step2Msg, setStep2Msg] = useState<string>('');
   const [resultLine, setResultLine] = useState<string | null>(null);
@@ -72,6 +74,57 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const [isSavingLimits, setIsSavingLimits] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const trackingController = useRef<AbortController | null>(null);
+  const completionCallback = useRef(onSubmissionSuccess);
+
+  const showJob = (job: SubmissionJobResult) => {
+    setStep1Msg(job.step1_validation?.message || 'Đang kiểm tra bài nộp.');
+    setStep2Msg(job.step2_scoring?.message || 'Đang chấm điểm.');
+    if (job.job_status === 'DONE' || job.job_status === 'FAILED') {
+      setPipelineStep(job.success ? 'finished' : 'error');
+      setResultLine(job.result_line);
+      setErrorMsg(job.success ? null : job.result_line);
+      if (job.success) {
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+      completionCallback.current();
+    } else {
+      setPipelineStep('step1');
+      setResultLine(null);
+    }
+  };
+  const jobCallback = useRef(showJob);
+  useEffect(() => {
+    completionCallback.current = onSubmissionSuccess;
+    jobCallback.current = showJob;
+  });
+
+  // Resume an accepted task after refresh, without uploading or spending another attempt.
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
+    const pending = readPendingSubmission(userId);
+    if (!pending) return;
+    const controller = new AbortController();
+    trackingController.current = controller;
+    void trackSubmission(userId, pending, (job) => jobCallback.current(job), controller.signal)
+      .then((job) => {
+        if (!job && !controller.signal.aborted) {
+          setPipelineStep('idle');
+          setErrorMsg('Chưa xác nhận được bài nộp. Chọn lại file để gửi lại an toàn.');
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setPipelineStep('error');
+          setErrorMsg(error.message || 'Chưa đọc được trạng thái bài đã gửi. Tải lại trang để thử tiếp.');
+        }
+      });
+    return () => controller.abort();
+  }, [currentUser?.id]);
+
+  useEffect(() => () => trackingController.current?.abort(), []);
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -119,6 +172,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   // thì KHÔNG bị trừ số lần nộp, nhưng nhật ký và lịch sử vẫn được lưu đầy đủ.
   const isCountedSubmission = (s: Submission) => {
     const st = (s.status || '').toUpperCase();
+    if (st === 'QUEUED' || st === 'PROCESSING') return true;
     if (st.includes('LỖI') || st.includes('ERROR') || st.includes('FAIL') || st.includes('INVALID')) {
       return false;
     }
@@ -212,7 +266,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const isCurrentBlocked = hasNoProblems || isCurrentLocked || isCurrentExhausted;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isCurrentBlocked) return;
+    if (isCurrentBlocked || isWorking) return;
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
       if (!selected.name.toLowerCase().endsWith('.csv')) {
@@ -228,7 +282,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (isCurrentBlocked) return;
+    if (isCurrentBlocked || isWorking) return;
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const dropped = e.dataTransfer.files[0];
       if (!dropped.name.toLowerCase().endsWith('.csv')) {
@@ -244,6 +298,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isWorking) return;
     if (!activeProblem || !activeProblemId) {
       setErrorMsg('Hiện tại không có đề thi nào mở nhận bài nộp.');
       return;
@@ -267,6 +322,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       setErrorMsg('Vui lòng chọn hoặc kéo thả file .csv trước khi nộp.');
       return;
     }
+    if (!currentUser) {
+      setErrorMsg('Vui lòng đăng nhập để nộp bài.');
+      return;
+    }
 
     try {
       setErrorMsg(null);
@@ -276,40 +335,16 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       setPipelineStep('step1');
       setStep1Msg('Đang đọc cấu trúc file, kiểm tra định dạng CSV, tiêu đề cột và số dòng...');
 
-      // Gọi API nộp bài tới Backend
-      const response = await submitSolution(activeProblemId, file, submissionType);
-
-      // Chờ tạo hiệu ứng trực quan chạy qua từng bước
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      if (!response.success) {
-        setPipelineStep('error');
-        setStep1Msg(response.step1_validation?.message || 'File CSV không hợp lệ');
-        setErrorMsg(response.result_line || 'Kiểm tra file thất bại');
-        onSubmissionSuccess();
-        return;
-      }
-
-      // Hoàn tất Bước 1, chuyển sang Quy trình 2: Chấm điểm
-      setStep1Msg(response.step1_validation?.message || 'File hợp lệ.');
-      setPipelineStep('step2');
-      setStep2Msg(`Đang đối chiếu nhãn dự đoán và tính toán điểm số theo độ đo ${activeProblem?.metric || 'độ đo'}...`);
-
-      await new Promise((resolve) => setTimeout(resolve, 900));
-
-      // Hoàn tất Bước 2: Hiển thị kết quả điểm 1 dòng
-      setStep2Msg(response.step2_scoring?.message || 'Chấm điểm thành công.');
-      setPipelineStep('finished');
-      setResultLine(response.result_line);
-
-      // Reset file input sau khi hoàn tất
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-
-      onSubmissionSuccess();
-    } catch (err: any) {
+      const pending = prepareSubmission(currentUser.id, activeProblemId, file, submissionType);
+      trackingController.current?.abort();
+      const controller = new AbortController();
+      trackingController.current = controller;
+      await sendAndTrackSubmission(currentUser.id, pending, file,
+        (job) => jobCallback.current(job), controller.signal);
+    } catch (err: unknown) {
+      if (trackingController.current?.signal.aborted) return;
       setPipelineStep('error');
-      setErrorMsg(err.message || 'Lỗi khi gửi bài nộp tới máy chủ chấm thi.');
+      setErrorMsg(err instanceof Error ? err.message : 'Chưa xác nhận được bài nộp. Vui lòng thử lại.');
     }
   };
 
@@ -335,8 +370,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       });
       setIsEditLimitsOpen(false);
       onRefreshProblems();
-    } catch (err: any) {
-      alert(err.message || 'Lỗi khi cập nhật cấu hình nộp bài');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Lỗi khi cập nhật cấu hình nộp bài');
     } finally {
       setIsSavingLimits(false);
     }
@@ -395,6 +430,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 <div className="space-y-2">
                   <select
                     value={activeProblemId}
+                    disabled={isWorking}
                     onChange={(e) => onSelectProblemId(Number(e.target.value))}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs sm:text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-hidden"
                   >
@@ -442,6 +478,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     setSubmissionType('public');
                     setErrorMsg(null);
                   }}
+                  disabled={isWorking}
                   className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between relative ${
                     submissionType === 'public'
                       ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-200'
@@ -481,6 +518,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     setSubmissionType('private');
                     setErrorMsg(null);
                   }}
+                  disabled={isWorking}
                   className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between relative ${
                     submissionType === 'private'
                       ? 'border-red-500 bg-red-50/40 ring-2 ring-red-200'
@@ -586,7 +624,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => {
-                  if (!isCurrentBlocked) fileInputRef.current?.click();
+                  if (!isCurrentBlocked && !isWorking) fileInputRef.current?.click();
                 }}
                 className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
                   isCurrentBlocked
@@ -601,7 +639,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   accept=".csv"
-                  disabled={isCurrentBlocked}
+                  disabled={isCurrentBlocked || isWorking}
                   className="hidden"
                 />
 
@@ -907,6 +945,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 submissions.map((sub) => {
                   const isPrivate = sub.submission_type === 'private';
                   const isSuccess = sub.status === 'HỢP LỆ' || sub.status === 'SUCCESS';
+                  const isPending = sub.status === 'QUEUED' || sub.status === 'PROCESSING';
                   const displayCode = sub.problem_code || (sub.problem_title ? sub.problem_title.split(']')[0].replace('[', '') : `P-${sub.problem_id}`);
                   const isBest = bestScoreSubIds.has(sub.id);
 
@@ -940,9 +979,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap inline-block ${
                           isSuccess
                             ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
+                            : isPending ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'
                         }`}>
-                          {sub.status}
+                          {sub.status === 'QUEUED' ? 'CHỜ KIỂM TRA' : sub.status === 'PROCESSING' ? 'ĐANG CHẤM' : sub.status}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-black text-slate-900 text-sm whitespace-nowrap">

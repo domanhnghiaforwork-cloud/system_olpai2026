@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Tuple, Set, Optional
 
@@ -22,6 +23,25 @@ LABELS_DIR = Path(os.getenv("EVAL_1_LABELS_DIR", EVALUATOR_DIR / "labels_eval_1"
 
 CLASS_COLUMNS = [f"hoi_{index:03d}" for index in range(600)]
 EXPECTED_COLUMNS = ["image_id", *CLASS_COLUMNS]
+
+
+@lru_cache(maxsize=4)
+def _labels_at_version(filepath: str, modified_ns: int, size: int):
+    # Keep only immutable IDs and the compact binary matrix, not a large frame.
+    frame = pd.read_csv(filepath, dtype={"image_id": "string", **{c: np.int8 for c in CLASS_COLUMNS}})
+    values = frame[CLASS_COLUMNS].to_numpy(dtype=np.int8)
+    values.flags.writeable = False
+    return pd.Index(frame["image_id"]), values
+
+
+def load_labels(path: Path):
+    stat = path.stat()
+    return _labels_at_version(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+
+
+def file_version(path: Path):
+    stat = path.stat()
+    return str(path.resolve()), stat.st_mtime_ns, stat.st_size
 
 SPLITS_FILES = {
     "public": {
@@ -124,6 +144,7 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
            - Phải là số thực, nằm trong đoạn [0.0, 1.0]
            - Không chứa NaN, None, Inf, chuỗi văn bản
         """
+        self._validated = None
         path = Path(filepath)
         split_key = "private" if "private" in submission_type.lower() else "public"
         split_info = SPLITS_FILES[split_key]
@@ -305,8 +326,8 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
             )
 
         try:
-            labels_df = pd.read_csv(labels_path, usecols=["image_id"], dtype={"image_id": "string"})
-            expected_ids = set(labels_df["image_id"])
+            label_ids, _ = load_labels(labels_path)
+            expected_ids = set(label_ids)
             actual_ids = set(image_ids)
 
             missing_ids = expected_ids - actual_ids
@@ -338,7 +359,7 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
         try:
             # Kiểm tra nhanh kiểu dữ liệu số
             class_df = df[CLASS_COLUMNS]
-            numeric_df = class_df.apply(pd.to_numeric, errors="coerce")
+            numeric_df = class_df if all(pd.api.types.is_numeric_dtype(t) for t in class_df.dtypes) else class_df.apply(pd.to_numeric, errors="coerce")
             
             # Kiểm tra ô nào không phải số hoặc NaN
             nan_mask = numeric_df.isna()
@@ -388,6 +409,9 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
             )
 
         # Hoàn tất kiểm tra hợp lệ!
+        # A worker evaluates this same immutable uploaded file immediately. Store
+        # the key/frame together so concurrent callers cannot mix their frames.
+        self._validated = (file_version(path), df)
         return EvaluationValidationResult(
             is_valid=True,
             message=(
@@ -416,16 +440,15 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
             raise FileNotFoundError(f"Không tìm thấy file nhãn chuẩn hệ thống: {labels_path}")
 
         # Đọc nhãn và submission
-        answer = pd.read_csv(labels_path, dtype={"image_id": "string"})
-        submission = pd.read_csv(path, dtype={"image_id": "string"})
-
-        expected_ids = pd.Index(answer["image_id"])
+        expected_ids, raw_labels = load_labels(labels_path)
+        cached = getattr(self, "_validated", None)
+        self._validated = None
+        submission = cached[1] if cached and cached[0] == file_version(path) else pd.read_csv(path, dtype={"image_id": "string"})
 
         # Re-index submission theo đúng thứ tự image_id của file nhãn
         submission = submission.set_index("image_id").loc[expected_ids]
 
         probabilities = submission[CLASS_COLUMNS].to_numpy(dtype=np.float64)
-        raw_labels = answer[CLASS_COLUMNS].to_numpy(dtype=np.int8)
 
         average_precisions = []
         for column_index in range(len(CLASS_COLUMNS)):
