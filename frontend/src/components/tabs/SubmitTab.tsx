@@ -321,7 +321,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
     }
 
     if (isCurrentExhausted) {
-      setErrorMsg(`Bạn đã sử dụng hết số lần nộp cho loại ${submissionType}_submit.csv (${currentUsed}/${currentMax} lượt).`);
+      setErrorMsg(`Bạn đã sử dụng hết số lần nộp cho ${currentSplitName} test (${currentUsed}/${currentMax} lượt).`);
       return;
     }
 
@@ -498,13 +498,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-xs font-black text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">
-                        public_submit.csv
+                      <span className="text-xs font-bold text-blue-700">
+                        Public test
                       </span>
                       <Globe className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <div className="text-xs font-bold text-slate-800">
-                      Tập kiểm thử công khai (Public)
                     </div>
                   </div>
 
@@ -547,8 +544,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-xs font-black text-red-700 bg-red-100 px-2 py-0.5 rounded-md">
-                        private_submit.csv
+                      <span className="text-xs font-bold text-red-700">
+                        Private test
                       </span>
                       {privateLockStatus.type === 'COUNTDOWN' ? (
                         <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
@@ -559,7 +556,6 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       )}
                     </div>
                     <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                      <span>Tập kiểm thử kín (Private)</span>
                       {isAdmin && privateLockStatus.type !== 'UNLOCKED' && (
                         <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
                           Admin test
@@ -632,7 +628,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                       <div>
                         <div className="font-bold text-rose-900">
-                          Đã hết số lần nộp cho bài nộp {submissionType}_submit.csv!
+                          Đã hết số lần nộp cho {currentSplitName} test!
                         </div>
                         <div className="text-rose-700 text-[11px] mt-0.5">
                           Bạn đã sử dụng tối đa <strong>{currentUsed}/{currentMax} lượt</strong> nộp được cho phép. Khu vực nộp đã bị khóa để bảo đảm tính minh bạch của cuộc thi.
@@ -698,7 +694,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           Khu vực nộp bài đã bị vô hiệu hóa
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
-                          Đã dùng hết {currentUsed}/{currentMax} lượt nộp ({submissionType}_submit.csv)
+                          Đã dùng hết {currentUsed}/{currentMax} lượt nộp {currentSplitName} test
                         </div>
                       </div>
                     ) : file ? (
@@ -708,7 +704,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                         </div>
                         <div className="text-sm font-bold text-slate-800 font-mono">{file.name}</div>
                         <div className="text-xs text-slate-500 mt-0.5">
-                          {(file.size / 1024).toFixed(1)} KB • Quy đổi thành: <strong className="text-blue-700">{submissionType}_submit.csv</strong>
+                          {(file.size / 1024).toFixed(1)} KB
                         </div>
                         <span className="text-[11px] text-blue-600 underline mt-2 font-medium">
                           Nhấn để đổi file CSV khác
@@ -723,7 +719,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           Kéo thả file CSV vào đây hoặc <span className="text-blue-600 underline">chọn file</span>
                         </div>
                         <div className="text-xs text-slate-400 mt-1">
-                          Chỉ nhận file .csv (sẽ lưu dưới dạng <strong>{submissionType}_submit.csv</strong>)
+                          Chỉ nhận file .csv
                         </div>
                       </div>
                     )}
@@ -853,7 +849,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>Tiến hành nộp bài ({submissionType}_submit.csv)</span>
+                  <span>Tiến hành nộp bài</span>
                 </>
               )}
             </button>
@@ -917,6 +913,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   const isPending = sub.status === 'QUEUED' || sub.status === 'PROCESSING';
                   const displayCode = sub.problem_code || (sub.problem_title ? sub.problem_title.split(']')[0].replace('[', '') : `P-${sub.problem_id}`);
                   const isBest = bestScoreSubIds.has(sub.id);
+                  const displayedFilename = sub.filename === 'public_submit.csv' || sub.filename === 'private_submit.csv'
+                    ? 'File kết quả (.csv)'
+                    : sub.filename;
 
                   return (
                     <tr 
@@ -938,11 +937,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                             ? 'bg-rose-100 text-rose-800 border border-rose-200' 
                             : 'bg-blue-100 text-blue-800 border border-blue-200'
                         }`}>
-                          {isPrivate ? 'private_submit.csv' : 'public_submit.csv'}
+                          {isPrivate ? 'Private test' : 'Public test'}
                         </span>
                       </td>
-                      <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap max-w-[120px] truncate" title={sub.filename}>
-                        {sub.filename}
+                      <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap max-w-[120px] truncate" title={displayedFilename}>
+                        {displayedFilename}
                       </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap min-w-[140px]">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap inline-block ${
@@ -967,7 +966,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           <a
                             href={getCandidateSubmissionDownloadUrl(sub.id)}
                             download={sub.filename || `${sub.submission_type || 'public'}_submit.csv`}
-                            title={`Tải xuống file bài nộp ${sub.filename || 'submission.csv'}`}
+                            title={`Tải xuống ${displayedFilename || 'file bài nộp'}`}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 hover:border-blue-300 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap"
                           >
                             <Download className="w-3.5 h-3.5 text-blue-600" />
