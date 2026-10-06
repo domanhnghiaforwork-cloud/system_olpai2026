@@ -71,10 +71,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'home', label: 'Trang chủ', icon: Home, isPublic: true },
-    { id: 'problems', label: 'Đề bài', icon: FileCode2, isPublic: false },
     { id: 'leaderboard', label: 'Bảng xếp hạng', icon: Trophy, isPublic: true },
-    { id: 'submit', label: 'Nộp bài', icon: UploadCloud, isPublic: false },
+    { id: 'problems', label: 'Đề thi', icon: FileCode2, isPublic: false },
     { id: 'datasets', label: 'Dữ liệu', icon: Database, isPublic: false },
+    { id: 'submit', label: 'Nộp bài', icon: UploadCloud, isPublic: false },
   ];
 
   if (isAdmin) {
