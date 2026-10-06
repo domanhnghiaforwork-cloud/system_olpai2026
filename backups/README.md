@@ -63,6 +63,9 @@ Khi cần khôi phục lại dữ liệu từ một bản sao lưu (ví dụ: `b
    ```bash
    unzip backups/backup_vong_1.zip -d temp_restore/
    ```
+   ```Windows PowerShell, dùng Expand-Archive thay cho unzip
+   Expand-Archive -LiteralPath .\backups\cv01.zip -DestinationPath .\temp_restore
+   ```
 
 2. **Khôi phục Database vào Docker Volume**:
    ```bash
@@ -82,6 +85,9 @@ Khi cần khôi phục lại dữ liệu từ một bản sao lưu (ví dụ: `b
 5. **Dọn dẹp thư mục tạm**:
    ```bash
    rm -rf temp_restore/
+   ```
+   ```window
+   Remove-Item -LiteralPath .\temp_restore -Recurse -Force
    ```
 
 ---
