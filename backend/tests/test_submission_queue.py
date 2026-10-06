@@ -1,5 +1,6 @@
 """Regression tests for concurrent reservations, replay, privacy and worker recovery."""
 import datetime
+import json
 import os
 from pathlib import Path
 import sys
@@ -194,6 +195,86 @@ class SubmissionQueueTest(unittest.TestCase):
                                         headers=self.headers[0]).status_code, 403)
         private = self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'}, headers=self.headers[2]).json()
         self.assertEqual(private[0]['best_score'], .95)
+
+    def test_nlp_configuration_worker_matches_original_and_hides_private_metrics(self):
+        from app.evaluators import get_evaluator
+        from app.evaluators.nlp_tung.scorer import score_submission
+        gt = {'pub_00001': 'Xin chào bạn, hôm nay bạn khỏe không?',
+              'prv_00001': 'Ngày mai chúng ta cùng đi học nhé!'}
+        labels = Path(work.name) / (uuid4().hex + '.csv')
+        labels.write_text('id,van_ban_chuan\npub_00001,"Xin chào bạn, hôm nay bạn khỏe không?"\n'
+                          'prv_00001,Ngày mai chúng ta cùng đi học nhé!\n', encoding='utf-8')
+        content = ('id,van_ban_chuan\npub_00001,"Xin chào bạn, hôm nay bạn khỏe không?"\n'
+                   'prv_00001,ngay mai chung ta cung di hoc nhe\n').encode('utf-8')
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).evaluation_config = 'eval_2_nlp_tung'
+            db.commit()
+        with patch('app.submission_jobs.get_evaluator', side_effect=get_evaluator), patch.dict(
+            os.environ, {'EVAL_2_NLP_TUNG_GROUND_TRUTH': str(labels)}
+        ):
+            configs = self.client.get('/api/problems/evaluators').json()
+            self.assertIn('eval_2_nlp_tung', [config['id'] for config in configs])
+            for phase in ('public', 'private'):
+                with self.subTest(phase=phase):
+                    accepted = self.upload(content=content, split=phase).json()
+                    self.assertEqual(accepted['job_status'], 'QUEUED')
+                    self.finish()
+                    url = f"/api/submissions/{accepted['submission_id']}/status"
+                    admin = self.client.get(url, headers=self.headers[2]).json()
+                    expected = score_submission(content, gt, phase)
+                    self.assertTrue(admin['success'])
+                    self.assertEqual(admin['step2_scoring']['details'], expected)
+                    self.assertEqual(admin['score'], expected['sacrebleu'])
+                    owner = self.client.get(url, headers=self.headers[0]).json()
+                    if phase == 'private':
+                        self.assertIsNone(owner['score'])
+                        self.assertEqual(owner['step2_scoring']['details'], {})
+                        self.assertNotIn('CER', owner['step1_validation']['message'])
+                    else:
+                        self.assertEqual(owner['score'], 100)
+
+    def test_nlp_best_submission_and_board_use_cer_exact_match_then_earliest_time(self):
+        from app.routers.admin import get_valid_submissions
+        from app.routers.leaderboard import best_submission_rows
+        from app.evaluators.nlp_tung.scorer import rank_key
+        when = datetime.datetime(2026, 1, 1)
+        with SessionLocal() as db:
+            problem = db.get(Problem, self.problem_id)
+            problem.evaluation_config = 'eval_2_nlp_tung'
+            code = problem.code
+            submissions = []
+            # Equal BLEU: choose lower CER, then higher EM, then earlier time.
+            cases = [(self.ids[0], .3, .9, 0), (self.ids[0], .1, .3, 1),
+                     (self.ids[0], .1, .5, 2), (self.ids[0], .1, .5, 3),
+                     (self.ids[1], .2, .8, 0), (self.ids[2], .1, .4, 0)]
+            for uid, cer, exact, offset in cases:
+                sub = Submission(user_id=uid, problem_id=self.problem_id, filename='submission.csv',
+                                 status='HỢP LỆ', submission_type='public', score=60,
+                                 created_at=when + datetime.timedelta(hours=offset))
+                db.add(sub)
+                db.flush()
+                details = {'sacrebleu': 60, 'cer': cer, 'exact_match': exact}
+                db.add(SubmissionJob(submission=sub, user_id=uid, client_request_id=str(uuid4()),
+                                     payload_sha256='x' * 64, original_filename='submission.csv',
+                                     evaluation_config='eval_2_nlp_tung', state='DONE',
+                                     result_json=json.dumps({'step2_scoring': {'details': details}})))
+                submissions.append((sub.id, uid, details, sub.created_at))
+            db.commit()
+            original_order = sorted(submissions, key=lambda sub: (*rank_key(sub[2]), sub[3], sub[0]))
+            expected = {}
+            for sid, uid, _, _ in original_order:
+                expected.setdefault(uid, sid)
+            rows = best_submission_rows(db, [self.problem_id], 'public')
+            self.assertEqual({r['user_id']: r['submission_id'] for r in rows}, expected)
+            exports = get_valid_submissions(db, problem_id=self.problem_id, submission_type='public', mode='best_per_user')
+            self.assertEqual([sub.id for sub in exports], list(expected.values()))
+        board = self.client.get('/api/leaderboard', params={'problem_code': code}).json()
+        self.assertEqual([row['user_id'] for row in board], list(expected))
+        self.assertEqual(board[0]['total_submissions'], 4)
+        overall = self.client.get('/api/leaderboard/overall').json()
+        for row in overall:
+            component = next(c for c in row['components'] if c['problem_id'] == self.problem_id)
+            self.assertEqual(component['submission_id'], expected[row['user_id']])
 
 
 if __name__ == "__main__":

@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import User, Problem, Submission, Dataset
+from ..models import User, Problem, Submission, SubmissionJob, Dataset
+from ..evaluators.ranking import submission_order_by
 from ..schemas import AdminUserResponse, UserCreate, UserUpdate, UserBatchCreate
 from ..auth_utils import require_admin
 from ..pdf_utils import make_content_disposition
@@ -74,21 +75,18 @@ def get_valid_submissions(
     if submission_type and submission_type in ["public", "private"]:
         query = query.filter(Submission.submission_type == submission_type)
 
-    all_subs = query.order_by(Submission.score.desc(), Submission.created_at.desc()).all()
-
     if mode == "best_per_user":
+        all_subs = query.join(Problem, Problem.id == Submission.problem_id).outerjoin(
+            SubmissionJob, SubmissionJob.submission_id == Submission.id
+        ).order_by(*submission_order_by(fallback_time_desc=True)).all()
         best_subs = {}
         for sub in all_subs:
             key = (sub.user_id, sub.problem_id)
             if key not in best_subs:
                 best_subs[key] = sub
-        # Sắp xếp danh sách điểm cao nhất theo điểm giảm dần
-        return sorted(
-            best_subs.values(),
-            key=lambda s: (s.score if s.score is not None else -1, s.created_at or datetime.datetime.min),
-            reverse=True
-        )
+        return list(best_subs.values())
     else:
+        all_subs = query.all()
         # Sắp xếp theo thời gian nộp mới nhất
         return sorted(
             all_subs,

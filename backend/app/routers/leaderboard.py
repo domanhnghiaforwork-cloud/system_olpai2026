@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select
 from typing import List, Optional
 from ..database import get_db
-from ..models import Submission, User, Problem
+from ..models import Submission, SubmissionJob, User, Problem
+from ..evaluators.ranking import nlp_tie_breakers, submission_order_by
 from ..schemas import LeaderboardItem, OverallLeaderboardItem, ProblemScoreComponent
 from ..auth_utils import get_current_user_optional
 
@@ -15,17 +16,21 @@ def best_submission_rows(db, problem_ids, submission_type):
     type_filter = Submission.submission_type == submission_type
     if submission_type == "public":
         type_filter = or_(type_filter, Submission.submission_type.is_(None))
-    # Rank inside SQL and load one row per user/problem, not every historical
-    # submission as an ORM object. Equal scores keep the earliest submission.
+    # Rank inside SQL and load one row per user/problem. NLP applies the original
+    # CER/exact-match tie breakers before the earliest submission timestamp.
+    cer, exact = nlp_tie_breakers()
     ranked = select(
         Submission.id.label("submission_id"), Submission.user_id, Submission.problem_id,
         Submission.score, Submission.created_at,
+        cer.label("rank_cer"), exact.label("rank_exact_match"),
         func.row_number().over(
             partition_by=(Submission.user_id, Submission.problem_id),
-            order_by=(Submission.score.desc(), Submission.created_at.asc(), Submission.id.asc()),
+            order_by=submission_order_by(),
         ).label("position"),
         func.max(Submission.created_at).over(partition_by=Submission.user_id).label("last_time"),
         func.count(Submission.id).over(partition_by=(Submission.user_id, Submission.problem_id)).label("total_submissions"),
+    ).join(Problem, Problem.id == Submission.problem_id).outerjoin(
+        SubmissionJob, SubmissionJob.submission_id == Submission.id
     ).where(
         Submission.problem_id.in_(problem_ids), type_filter,
         Submission.status.in_(("HỢP LỆ", "SUCCESS")), Submission.score.isnot(None),
@@ -90,7 +95,11 @@ def get_leaderboard(
         return []
     rows = best_submission_rows(db, [problem.id], split)
     users = {u.id: u for u in db.query(User).filter(User.id.in_({r["user_id"] for r in rows})).all()}
-    rows.sort(key=lambda row: (-row["score"], row["last_time"]))
+    if (problem.evaluation_config or "").strip() == "eval_2_nlp_tung":
+        rows.sort(key=lambda row: (-row["score"], row["rank_cer"], -row["rank_exact_match"],
+                                   row["created_at"], row["submission_id"]))
+    else:
+        rows.sort(key=lambda row: (-row["score"], row["last_time"]))
     items = []
     for rank, row in enumerate(rows, 1):
         user = users.get(row["user_id"])

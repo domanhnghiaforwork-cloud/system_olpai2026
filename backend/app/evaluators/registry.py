@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Type
 from .base import BaseEvaluator
 from .eval_1_cv_hico import Eval1CvHicoEvaluator
+from .eval_2_nlp_tung import Eval2NlpTungEvaluator
 
 # Registry mapping eval_id to evaluator instance or class
 _EVALUATORS: Dict[str, BaseEvaluator] = {}
@@ -32,3 +33,4 @@ def list_available_evaluators() -> List[dict]:
 
 # Auto-register default evaluators
 register_evaluator(Eval1CvHicoEvaluator())
+register_evaluator(Eval2NlpTungEvaluator())
