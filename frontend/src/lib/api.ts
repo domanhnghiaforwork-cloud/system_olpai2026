@@ -11,6 +11,7 @@ import {
   BatchCreateUserParams,
   BatchCreateUserResponse,
   SubmissionJobResult,
+  TrainingNotebook,
 } from '@/types';
 import { resetChatbotSession, waitForChatbotSessionReset } from './chatbotSession';
 
@@ -298,6 +299,46 @@ export async function fetchSubmissions(problemId?: number): Promise<Submission[]
   });
   if (!res.ok) throw new Error('Chưa tải được lịch sử bài nộp.');
   return res.json();
+}
+
+export async function fetchTrainingNotebooks(problemId: number, signal?: AbortSignal): Promise<TrainingNotebook[]> {
+  const res = await fetch(`${API_BASE}/api/training-notebooks?problem_id=${problemId}`, {
+    cache: 'no-store', headers: getAuthHeaders(),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error('Không tải được trạng thái notebook. Vui lòng thử lại.');
+  return res.json();
+}
+
+export async function submitTrainingNotebook(problemId: number, split: 'public' | 'private', file: File): Promise<TrainingNotebook> {
+  const body = new FormData();
+  body.append('problem_id', String(problemId));
+  body.append('submission_type', split);
+  body.append('file', file);
+  const res = await fetch(`${API_BASE}/api/training-notebooks`, {
+    method: 'POST', headers: getAuthHeaders(), body, signal: AbortSignal.timeout(180_000),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || 'Không thể nộp notebook huấn luyện.');
+  }
+  return res.json();
+}
+
+export async function downloadTrainingNotebook(notebook: TrainingNotebook): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/training-notebooks/${notebook.id}/download`, {
+    headers: getAuthHeaders(), signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error('Không thể tải notebook đã nộp.');
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = notebook.filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Keep the blob available while the browser starts/writes the download.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export async function submitSolution(

@@ -92,3 +92,19 @@ export function toUtcIsoString(dateInput?: string | null): string | null {
   const d = new Date(dateInput.trim());
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+/** Submission schedules are entered in Vietnam time regardless of browser timezone. */
+export function toVietnamDatetimeLocal(value?: Date | string | null): string {
+  const date = parseUnlockDate(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date).replace(' ', 'T');
+}
+
+export function vietnamDatetimeToUtc(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}+07:00`);
+  return isNaN(date.getTime()) ? null : date.toISOString();
+}

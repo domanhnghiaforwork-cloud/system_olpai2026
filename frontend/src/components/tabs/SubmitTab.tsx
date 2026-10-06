@@ -19,12 +19,13 @@ import {
   AlertTriangle,
   Ban,
   Clock,
-  Trophy,
   Download
 } from 'lucide-react';
 import { updateProblem, getCandidateSubmissionDownloadUrl } from '@/lib/api';
 import { prepareSubmission, readPendingSubmission, sendAndTrackSubmission, trackSubmission } from '@/lib/submissionTracker';
-import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
+import { BestScoreNotebookCard } from '@/components/BestScoreNotebookCard';
+import { SubmissionScheduleFields } from '@/components/SubmissionScheduleFields';
+import { getItemLockStatus, toVietnamDatetimeLocal, vietnamDatetimeToUtc } from '@/lib/countdown';
 
 interface SubmitTabProps {
   problems: Problem[];
@@ -69,6 +70,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const [isEditLimitsOpen, setIsEditLimitsOpen] = useState(false);
   const [editMaxPublic, setEditMaxPublic] = useState(5);
   const [editMaxPrivate, setEditMaxPrivate] = useState(2);
+  const [editPublicIsLocked, setEditPublicIsLocked] = useState(false);
+  const [editPublicUnlockAt, setEditPublicUnlockAt] = useState('');
   const [editPrivateIsLocked, setEditPrivateIsLocked] = useState(false);
   const [editPrivateUnlockAt, setEditPrivateUnlockAt] = useState('');
   const [isSavingLimits, setIsSavingLimits] = useState(false);
@@ -166,6 +169,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
     now
   );
   const isPrivateLocked = !isAdmin && privateLockStatus.type !== 'UNLOCKED';
+  const publicLockStatus = getItemLockStatus(activeProblem?.public_is_locked, activeProblem?.public_unlock_at, now);
+  const isPublicLocked = !isAdmin && publicLockStatus.type !== 'UNLOCKED';
 
   // Hàm kiểm tra bài nộp hợp lệ để tính vào giới hạn số lần nộp.
   // QUY TẮC: Nếu bài nộp bị lỗi ở Quy trình 1 (Lỗi định dạng, cấu trúc CSV / chưa có điểm)
@@ -259,7 +264,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   }, [submissions, currentUser]);
 
   // Trạng thái hết lượt & bị khóa của loại bài nộp đang chọn
-  const isCurrentLocked = submissionType === 'private' && isPrivateLocked;
+  const isCurrentLocked = submissionType === 'private' ? isPrivateLocked : isPublicLocked;
+  const currentLockStatus = submissionType === 'private' ? privateLockStatus : publicLockStatus;
+  const currentSplitName = submissionType === 'private' ? 'Private' : 'Public';
   const isCurrentExhausted = submissionType === 'public' ? isPublicExhausted : isPrivateExhausted;
   const currentUsed = submissionType === 'public' ? usedPublic : usedPrivate;
   const currentMax = submissionType === 'public' ? maxPublic : maxPrivate;
@@ -304,11 +311,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       return;
     }
 
-    if (submissionType === 'private' && isPrivateLocked) {
+    if (isCurrentLocked) {
       setErrorMsg(
-        privateLockStatus.type === 'COUNTDOWN'
-          ? `Khu vực nộp bài Private đang trong thời gian đếm ngược (Mở sau: ${privateLockStatus.formatted}).`
-          : 'Khu vực nộp bài Private hiện đang bị khóa bởi Ban Tổ Chức.'
+        currentLockStatus.type === 'COUNTDOWN'
+          ? `Khu vực nộp bài ${currentSplitName} đang trong thời gian đếm ngược (Mở sau: ${currentLockStatus.formatted}).`
+          : `Khu vực nộp bài ${currentSplitName} hiện đang bị khóa bởi Ban Tổ Chức.`
       );
       return;
     }
@@ -352,8 +359,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const handleOpenEditLimits = () => {
     setEditMaxPublic(maxPublic);
     setEditMaxPrivate(maxPrivate);
+    setEditPublicIsLocked(Boolean(activeProblem?.public_is_locked));
+    setEditPublicUnlockAt(toVietnamDatetimeLocal(activeProblem?.public_unlock_at));
     setEditPrivateIsLocked(Boolean(activeProblem?.private_is_locked));
-    setEditPrivateUnlockAt(toDatetimeLocal(activeProblem?.private_unlock_at));
+    setEditPrivateUnlockAt(toVietnamDatetimeLocal(activeProblem?.private_unlock_at));
     setIsEditLimitsOpen(true);
   };
 
@@ -365,8 +374,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       await updateProblem(activeProblemId, {
         max_public_submissions: editMaxPublic,
         max_private_submissions: editMaxPrivate,
+        public_is_locked: editPublicIsLocked,
+        public_unlock_at: vietnamDatetimeToUtc(editPublicUnlockAt),
         private_is_locked: editPrivateIsLocked,
-        private_unlock_at: toUtcIsoString(editPrivateUnlockAt),
+        private_unlock_at: vietnamDatetimeToUtc(editPrivateUnlockAt),
       });
       setIsEditLimitsOpen(false);
       onRefreshProblems();
@@ -398,17 +409,17 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
           <button
             onClick={handleOpenEditLimits}
             className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            title="Chỉnh sửa giới hạn số lần nộp và thời gian mở khóa Private cho đề này"
+            title="Chỉnh sửa lượt nộp CSV và lịch mở nộp CSV/notebook Public, Private"
           >
             <Settings className="w-3.5 h-3.5 text-red-400" />
-            <span>Cấu hình nộp & Mở khóa Private (Admin)</span>
+            <span>Cấu hình lịch nộp Public / Private (Admin)</span>
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Form: Submit Box */}
-        <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             
             {/* 1. Chọn đề bài (Chỉ các đề đã mở khóa và có Cấu hình đánh giá mới được đưa vào danh sách) */}
@@ -436,11 +447,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   >
                     {availableProblems.map((p) => (
                       <option key={p.id} value={p.id}>
-                        [{p.code}] - [{p.category}] {p.title} ({p.metric} • Cấu hình: {p.evaluation_config})
+                        [{p.code}] - [{p.category}] {p.title} ({p.metric}{isAdmin && p.evaluation_config ? ` • Cấu hình: ${p.evaluation_config}` : ''})
                       </option>
                     ))}
                   </select>
-                  {activeProblem?.evaluation_config && (
+                  {isAdmin && activeProblem?.evaluation_config && (
                     <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3.5 py-2 rounded-xl font-medium">
                       <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span>
@@ -465,7 +476,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     className="text-[11px] text-red-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Settings className="w-3 h-3" />
-                    <span>Cấu hình & Mở khóa Private</span>
+                    <span>Lịch nộp Public / Private</span>
                   </button>
                 )}
               </div>
@@ -483,7 +494,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     submissionType === 'public'
                       ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-200'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
-                  } ${isPublicExhausted ? 'border-amber-300 bg-amber-50/20' : ''}`}
+                  } ${isPublicExhausted || isPublicLocked ? 'border-amber-300 bg-amber-50/20' : ''}`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
@@ -497,7 +508,15 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
+                    {publicLockStatus.type === 'COUNTDOWN' ? (
+                      <div className="flex items-center justify-between gap-1 text-[11px] font-bold text-amber-700">
+                        <span>Mở sau:</span><span className="font-mono">{publicLockStatus.formatted}</span>
+                      </div>
+                    ) : publicLockStatus.type === 'LOCKED' ? (
+                      <p className="text-[11px] font-bold text-rose-700">ĐANG KHÓA</p>
+                    ) : null}
+                    <div className="flex items-center justify-between">
                     <span className="text-[11px] text-slate-500">Đã nộp:</span>
                     <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${
                       hasNoProblems
@@ -508,6 +527,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     }`}>
                       {hasNoProblems ? '—' : `${usedPublic}/${maxPublic} lần`} {isPublicExhausted && !hasNoProblems ? '• HẾT LƯỢT' : ''}
                     </span>
+                    </div>
                   </div>
                 </button>
 
@@ -592,119 +612,207 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 3. Tải lên tệp kết quả dự đoán (.csv):
               </label>
 
-              {/* Thông báo nếu không có đề mở hoặc hết số lần nộp */}
-              {hasNoProblems ? (
-                <div className="mb-3 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
-                  <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold text-amber-900">
-                      Chưa có đề thi nào mở để nộp bài!
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
+                <div className="min-w-0">
+                  {/* Thông báo nếu không có đề mở hoặc hết số lần nộp */}
+                  {hasNoProblems ? (
+                    <div className="mb-3 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
+                      <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-amber-900">
+                          Chưa có đề thi nào mở để nộp bài!
+                        </div>
+                        <div className="text-amber-700 text-[11px] mt-0.5">
+                          Các đề thi hiện tại đang ở trạng thái Khóa hoặc Đang đếm ngược. Khu vực nộp bài sẽ tự động mở khi có đề thi khả dụng.
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-amber-700 text-[11px] mt-0.5">
-                      Các đề thi hiện tại đang ở trạng thái Khóa hoặc Đang đếm ngược. Khu vực nộp bài sẽ tự động mở khi có đề thi khả dụng.
+                  ) : isCurrentExhausted ? (
+                    <div className="mb-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
+                      <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-rose-900">
+                          Đã hết số lần nộp cho bài nộp {submissionType}_submit.csv!
+                        </div>
+                        <div className="text-rose-700 text-[11px] mt-0.5">
+                          Bạn đã sử dụng tối đa <strong>{currentUsed}/{currentMax} lượt</strong> nộp được cho phép. Khu vực nộp đã bị khóa để bảo đảm tính minh bạch của cuộc thi.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Khu vực nộp file: BỊ MỜ (opacity-40 + pointer-events-none) KHI HẾT SỐ LẦN NỘP, BỊ KHÓA HOẶC KHÔNG CÓ ĐỀ */}
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                    onClick={() => {
+                      if (!isCurrentBlocked && !isWorking) fileInputRef.current?.click();
+                    }}
+                    className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
+                      isCurrentBlocked
+                        ? 'opacity-40 pointer-events-none cursor-not-allowed bg-slate-100 border-slate-300'
+                        : file
+                        ? 'border-emerald-500 bg-emerald-50/30 cursor-pointer'
+                        : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".csv"
+                      disabled={isCurrentBlocked || isWorking}
+                      className="hidden"
+                    />
+
+                    {hasNoProblems ? (
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
+                          <Lock className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-600">
+                          Khu vực nộp bài đang tạm khóa
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Không có đề thi nào đang mở nhận bài nộp
+                        </div>
+                      </div>
+                    ) : isCurrentLocked ? (
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
+                          <Lock className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-600">
+                          Khu vực nộp {currentSplitName} đang khóa
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Vui lòng đợi đến giờ mở khóa để tiến hành nộp bài
+                        </div>
+                      </div>
+                    ) : isCurrentExhausted ? (
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
+                          <Ban className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-600">
+                          Khu vực nộp bài đã bị vô hiệu hóa
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Đã dùng hết {currentUsed}/{currentMax} lượt nộp ({submissionType}_submit.csv)
+                        </div>
+                      </div>
+                    ) : file ? (
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
+                          <FileCheck className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-800 font-mono">{file.name}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {(file.size / 1024).toFixed(1)} KB • Quy đổi thành: <strong className="text-blue-700">{submissionType}_submit.csv</strong>
+                        </div>
+                        <span className="text-[11px] text-blue-600 underline mt-2 font-medium">
+                          Nhấn để đổi file CSV khác
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+                          <UploadCloud className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-slate-800">
+                          Kéo thả file CSV vào đây hoặc <span className="text-blue-600 underline">chọn file</span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          Chỉ nhận file .csv (sẽ lưu dưới dạng <strong>{submissionType}_submit.csv</strong>)
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step-by-step progress cards */}
+                <div className="space-y-3 min-w-0" aria-live="polite">
+                  {/* Bước 1: Kiểm tra file */}
+                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                    pipelineStep === 'step1'
+                      ? 'border-blue-400 bg-blue-50/50 shadow-xs'
+                      : pipelineStep === 'step2' || pipelineStep === 'finished'
+                      ? 'border-emerald-200 bg-emerald-50/30'
+                      : pipelineStep === 'error'
+                      ? 'border-rose-200 bg-rose-50/30'
+                      : 'border-slate-200 bg-slate-50/40'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          pipelineStep === 'step1'
+                            ? 'bg-blue-600 text-white'
+                            : pipelineStep === 'step2' || pipelineStep === 'finished'
+                            ? 'bg-emerald-600 text-white'
+                            : pipelineStep === 'error'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-slate-300 text-slate-700'
+                        }`}>
+                          1
+                        </span>
+                        <span className="font-bold text-[11px] leading-4 text-slate-900">
+                          Quy trình 1: Kiểm tra tính hợp lệ file CSV
+                        </span>
+                      </div>
+
+                      {pipelineStep === 'step1' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+                      {(pipelineStep === 'step2' || pipelineStep === 'finished') && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      )}
+                      {pipelineStep === 'error' && <AlertCircle className="w-4 h-4 text-rose-600" />}
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 pl-7 space-y-1">
+                      <div>{step1Msg || 'Kiểm tra đuôi .csv, định dạng bảng, tiêu đề cột và số dòng dự đoán.'}</div>
+                      {pipelineStep === 'error' && (
+                        <div className="text-emerald-700 font-semibold text-[11px] flex items-center gap-1 mt-1">
+                          <span>💡 Lỗi ở quy trình kiểm tra này không bị trừ số lần nộp của bạn.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bước 2: Chấm điểm */}
+                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                    pipelineStep === 'step2'
+                      ? 'border-blue-400 bg-blue-50/50 shadow-xs'
+                      : pipelineStep === 'finished'
+                      ? 'border-emerald-200 bg-emerald-50/30'
+                      : 'border-slate-200 bg-slate-50/40 opacity-70'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          pipelineStep === 'step2'
+                            ? 'bg-blue-600 text-white'
+                            : pipelineStep === 'finished'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-300 text-slate-700'
+                        }`}>
+                          2
+                        </span>
+                        <span className="font-bold text-[11px] leading-4 text-slate-900">
+                          Quy trình 2: Chấm điểm ({activeProblem?.metric || 'Độ đo'})
+                        </span>
+                      </div>
+
+                      {pipelineStep === 'step2' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+                      {pipelineStep === 'finished' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 pl-7">
+                      {step2Msg || `Tính toán điểm số theo độ đo ${activeProblem?.metric || 'chuẩn'} trên tập ${submissionType.toUpperCase()}.`}
+                      {resultLine && pipelineStep === 'finished' && (
+                        <p className="mt-2 font-semibold text-emerald-700">{resultLine}</p>
+                      )}
                     </div>
                   </div>
                 </div>
-              ) : isCurrentExhausted ? (
-                <div className="mb-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
-                  <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold text-rose-900">
-                      Đã hết số lần nộp cho bài nộp {submissionType}_submit.csv!
-                    </div>
-                    <div className="text-rose-700 text-[11px] mt-0.5">
-                      Bạn đã sử dụng tối đa <strong>{currentUsed}/{currentMax} lượt</strong> nộp được cho phép. Khu vực nộp đã bị khóa để bảo đảm tính minh bạch của cuộc thi.
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Khu vực nộp file: BỊ MỜ (opacity-40 + pointer-events-none) KHI HẾT SỐ LẦN NỘP, BỊ KHÓA HOẶC KHÔNG CÓ ĐỀ */}
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
-                onClick={() => {
-                  if (!isCurrentBlocked && !isWorking) fileInputRef.current?.click();
-                }}
-                className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
-                  isCurrentBlocked
-                    ? 'opacity-40 pointer-events-none cursor-not-allowed bg-slate-100 border-slate-300'
-                    : file
-                    ? 'border-emerald-500 bg-emerald-50/30 cursor-pointer'
-                    : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer'
-                }`}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept=".csv"
-                  disabled={isCurrentBlocked || isWorking}
-                  className="hidden"
-                />
-
-                {hasNoProblems ? (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                      <Lock className="w-6 h-6" />
-                    </div>
-                    <div className="text-sm font-bold text-slate-600">
-                      Khu vực nộp bài đang tạm khóa
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      Không có đề thi nào đang mở nhận bài nộp
-                    </div>
-                  </div>
-                ) : isCurrentLocked ? (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                      <Lock className="w-6 h-6" />
-                    </div>
-                    <div className="text-sm font-bold text-slate-600">
-                      Khu vực nộp Private đang khóa
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      Vui lòng đợi đến giờ mở khóa để tiến hành nộp bài
-                    </div>
-                  </div>
-                ) : isCurrentExhausted ? (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                      <Ban className="w-6 h-6" />
-                    </div>
-                    <div className="text-sm font-bold text-slate-600">
-                      Khu vực nộp bài đã bị vô hiệu hóa
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      Đã dùng hết {currentUsed}/{currentMax} lượt nộp ({submissionType}_submit.csv)
-                    </div>
-                  </div>
-                ) : file ? (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
-                      <FileCheck className="w-6 h-6" />
-                    </div>
-                    <div className="text-sm font-bold text-slate-800 font-mono">{file.name}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {(file.size / 1024).toFixed(1)} KB • Quy đổi thành: <strong className="text-blue-700">{submissionType}_submit.csv</strong>
-                    </div>
-                    <span className="text-[11px] text-blue-600 underline mt-2 font-medium">
-                      Nhấn để đổi file CSV khác
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
-                      <UploadCloud className="w-6 h-6" />
-                    </div>
-                    <div className="text-sm font-bold text-slate-800">
-                      Kéo thả file CSV vào đây hoặc <span className="text-blue-600 underline">chọn file</span>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      Chỉ nhận file .csv (sẽ lưu dưới dạng <strong>{submissionType}_submit.csv</strong>)
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -730,7 +838,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
               ) : isCurrentLocked ? (
                 <>
                   <Lock className="w-4 h-4" />
-                  <span>Vòng Private đang khóa</span>
+                  <span>Vòng {currentSplitName} đang khóa</span>
                 </>
               ) : isCurrentExhausted ? (
                 <>
@@ -752,159 +860,20 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
           </form>
         </div>
 
-        {/* Right Info: 2-Step Pipeline Visual Display */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-5">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-red-600" />
-              <span>Quy trình đánh giá bài nộp</span>
-            </h3>
-
-            {/* Step-by-step progress cards */}
-            <div className="space-y-4">
-              {/* Bước 1: Kiểm tra file */}
-              <div className={`p-4 rounded-2xl border transition-all ${
-                pipelineStep === 'step1'
-                  ? 'border-blue-400 bg-blue-50/50 shadow-xs'
-                  : pipelineStep === 'step2' || pipelineStep === 'finished'
-                  ? 'border-emerald-200 bg-emerald-50/30'
-                  : pipelineStep === 'error'
-                  ? 'border-rose-200 bg-rose-50/30'
-                  : 'border-slate-200 bg-slate-50/40'
-              }`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                      pipelineStep === 'step1'
-                        ? 'bg-blue-600 text-white'
-                        : pipelineStep === 'step2' || pipelineStep === 'finished'
-                        ? 'bg-emerald-600 text-white'
-                        : pipelineStep === 'error'
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-slate-300 text-slate-700'
-                    }`}>
-                      1
-                    </span>
-                    <span className="font-bold text-xs text-slate-900">
-                      Quy trình 1: Kiểm tra tính hợp lệ file CSV
-                    </span>
-                  </div>
-
-                  {pipelineStep === 'step1' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
-                  {(pipelineStep === 'step2' || pipelineStep === 'finished') && (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  )}
-                  {pipelineStep === 'error' && <AlertCircle className="w-4 h-4 text-rose-600" />}
-                </div>
-
-                <div className="text-[11px] text-slate-500 pl-7 space-y-1">
-                  <div>{step1Msg || 'Kiểm tra đuôi .csv, định dạng bảng, tiêu đề cột và số dòng dự đoán.'}</div>
-                  {pipelineStep === 'error' && (
-                    <div className="text-emerald-700 font-semibold text-[11px] flex items-center gap-1 mt-1">
-                      <span>💡 Lỗi ở quy trình kiểm tra này không bị trừ số lần nộp của bạn.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bước 2: Chấm điểm */}
-              <div className={`p-4 rounded-2xl border transition-all ${
-                pipelineStep === 'step2'
-                  ? 'border-blue-400 bg-blue-50/50 shadow-xs'
-                  : pipelineStep === 'finished'
-                  ? 'border-emerald-200 bg-emerald-50/30'
-                  : 'border-slate-200 bg-slate-50/40 opacity-70'
-              }`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                      pipelineStep === 'step2'
-                        ? 'bg-blue-600 text-white'
-                        : pipelineStep === 'finished'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-300 text-slate-700'
-                    }`}>
-                      2
-                    </span>
-                    <span className="font-bold text-xs text-slate-900">
-                      Quy trình 2: Chấm điểm ({activeProblem?.metric || 'Độ đo'})
-                    </span>
-                  </div>
-
-                  {pipelineStep === 'step2' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
-                  {pipelineStep === 'finished' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
-                </div>
-
-                <div className="text-[11px] text-slate-500 pl-7">
-                  {step2Msg || `Tính toán điểm số theo độ đo ${activeProblem?.metric || 'chuẩn'} trên tập ${submissionType.toUpperCase()}.`}
-                </div>
-              </div>
-            </div>
-
-            {/* Dòng kết quả điểm nổi bật sau khi hoàn tất */}
-            {resultLine && pipelineStep === 'finished' && (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md animate-in fade-in zoom-in-95 duration-200">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-100 flex items-center gap-1 mb-1">
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Hoàn tất quy trình chấm điểm</span>
-                </div>
-                <div className="font-black text-xs sm:text-sm tracking-tight leading-snug">
-                  {resultLine}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* COMPONENT: ĐIỂM SỐ CAO NHẤT */}
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Trophy className="w-4 h-4 text-amber-500" />
-                <span>Điểm số cao nhất:</span>
-              </h3>
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-                {activeProblem?.code || '—'}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {/* Public Test Highest Score */}
-              <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                    <span>Public test:</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">
-                    {bestPublicScore !== null ? `Độ đo: ${activeProblem?.metric || 'Chuẩn'}` : 'Chưa có điểm'}
-                  </div>
-                </div>
-                <div className="font-mono font-black text-xl text-blue-700">
-                  {bestPublicScore !== null ? bestPublicScore : '-'}
-                </div>
-              </div>
-
-              {/* Private Test Highest Score */}
-              <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-600"></span>
-                    <span>Private test:</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">
-                    {bestPrivateScore !== null 
-                      ? `Độ đo: ${activeProblem?.metric || 'Chuẩn'}` 
-                      : !isAdmin && userProblemSubs.some(s => s.submission_type === 'private' && (s.status === 'HỢP LỆ' || s.status === 'SUCCESS'))
-                      ? 'Đã nộp (Bảo mật điểm)'
-                      : 'Chưa có điểm'}
-                  </div>
-                </div>
-                <div className="font-mono font-black text-xl text-rose-700">
-                  {bestPrivateScore !== null ? bestPrivateScore : '-'}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Right Info: Highest scores */}
+        <div className="lg:col-span-4 space-y-6">
+          <BestScoreNotebookCard
+            key={`${currentUser?.id ?? 0}:${activeProblemId}`}
+            problem={activeProblem}
+            currentUser={currentUser}
+            bestPublicScore={bestPublicScore}
+            bestPrivateScore={bestPrivateScore}
+            hasPrivateSubmission={userProblemSubs.some((submission) => submission.submission_type === 'private' && (submission.status === 'HỢP LỆ' || submission.status === 'SUCCESS'))}
+            privateLocked={isPrivateLocked}
+            publicLocked={isPublicLocked}
+            publicCountdown={publicLockStatus.type === 'COUNTDOWN' ? publicLockStatus.formatted : undefined}
+            privateCountdown={privateLockStatus.type === 'COUNTDOWN' ? privateLockStatus.formatted : undefined}
+          />
         </div>
       </div>
 
@@ -1032,7 +1001,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                 <Settings className="w-5 h-5 text-red-600" />
-                <span>Cấu Hình Nộp Bài & Mở Khóa Private [{activeProblem?.code || ''}]</span>
+                <span>Lịch nộp Public / Private [{activeProblem?.code || ''}]</span>
               </h3>
               <button
                 type="button"
@@ -1088,97 +1057,16 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 </div>
               </div>
 
-              {/* PHẦN 2: KHÓA & THỜI GIAN MỞ KHÓA VÒNG PRIVATE */}
-              <div className="p-4 rounded-2xl bg-red-50/50 border border-red-200 space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-black uppercase tracking-wider text-red-950 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-red-600" />
-                    <span>2. Khóa & Hẹn Giờ Mở Khóa Vòng Private</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={editPrivateIsLocked} 
-                      onChange={(e) => setEditPrivateIsLocked(e.target.checked)} 
-                      className="sr-only peer" 
-                    />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
-                    <span className="ml-2 text-xs font-bold text-slate-700">
-                      {editPrivateIsLocked ? 'Đang Khóa' : 'Mở'}
-                    </span>
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Thời gian hẹn giờ mở khóa Private (Đếm ngược):</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={editPrivateUnlockAt}
-                    onChange={(e) => setEditPrivateUnlockAt(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-red-500 focus:outline-hidden font-mono"
-                  />
-                  
-                  {/* Phím tắt chọn nhanh thời gian */}
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const d = new Date(Date.now() + 15 * 60 * 1000);
-                        setEditPrivateUnlockAt(toDatetimeLocal(d));
-                      }}
-                      className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
-                    >
-                      +15 phút
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const d = new Date(Date.now() + 60 * 60 * 1000);
-                        setEditPrivateUnlockAt(toDatetimeLocal(d));
-                      }}
-                      className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
-                    >
-                      +1 giờ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                        setEditPrivateUnlockAt(toDatetimeLocal(d));
-                      }}
-                      className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-red-400 rounded-md text-slate-600 cursor-pointer"
-                    >
-                      +1 ngày
-                    </button>
-                    {activeProblem.unlock_at && (
-                      <button
-                        type="button"
-                        onClick={() => setEditPrivateUnlockAt(toDatetimeLocal(activeProblem.unlock_at))}
-                        className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-md text-indigo-700 cursor-pointer"
-                        title="Đồng bộ với thời gian mở đề thi"
-                      >
-                        Theo giờ mở đề
-                      </button>
-                    )}
-                    {editPrivateUnlockAt && (
-                      <button
-                        type="button"
-                        onClick={() => setEditPrivateUnlockAt('')}
-                        className="px-2 py-0.5 text-[10px] font-bold bg-red-100 border border-red-300 text-red-700 rounded-md hover:bg-red-200 cursor-pointer"
-                      >
-                        Xóa hẹn giờ (Mở ngay)
-                      </button>
-                    )}
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 mt-2">
-                    💡 Đến thời gian này, hệ thống sẽ <strong>tự động mở khóa</strong> nhận bài nộp <code className="text-red-700 bg-red-100/70 px-1 rounded font-mono">private_submit.csv</code> cho tất cả thí sinh.
-                  </p>
-                </div>
-              </div>
+              <SubmissionScheduleFields
+                split="public" locked={editPublicIsLocked} unlockAt={editPublicUnlockAt}
+                problemUnlockAt={activeProblem.unlock_at}
+                onLockedChange={setEditPublicIsLocked} onUnlockAtChange={setEditPublicUnlockAt}
+              />
+              <SubmissionScheduleFields
+                split="private" locked={editPrivateIsLocked} unlockAt={editPrivateUnlockAt}
+                problemUnlockAt={activeProblem.unlock_at}
+                onLockedChange={setEditPrivateIsLocked} onUnlockAtChange={setEditPrivateUnlockAt}
+              />
 
               <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 shrink-0">
                 <button

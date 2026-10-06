@@ -17,6 +17,7 @@ class User(Base):
 
     submissions = relationship("Submission", back_populates="user", cascade="all, delete-orphan")
     chatbot_provision_jobs = relationship("ChatbotProvisionJob", cascade="all, delete-orphan")
+    training_notebooks = relationship("TrainingNotebook", back_populates="user", cascade="all, delete-orphan")
 
 
 class ChatbotProvisionJob(Base):
@@ -49,6 +50,8 @@ class Problem(Base):
     max_private_submissions = Column(Integer, default=2)
     is_locked = Column(Boolean, default=False)
     unlock_at = Column(DateTime, nullable=True)
+    public_is_locked = Column(Boolean, default=False)
+    public_unlock_at = Column(DateTime, nullable=True)
     private_is_locked = Column(Boolean, default=False)
     private_unlock_at = Column(DateTime, nullable=True)
     evaluation_config = Column(String(100), nullable=True) # e.g. "eval_1_cv_hico" or None
@@ -56,6 +59,7 @@ class Problem(Base):
 
     submissions = relationship("Submission", back_populates="problem", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="problem", cascade="all, delete-orphan")
+    training_notebooks = relationship("TrainingNotebook", back_populates="problem", cascade="all, delete-orphan")
 
 class Dataset(Base):
     __tablename__ = "datasets"
@@ -93,6 +97,24 @@ class Submission(Base):
     user = relationship("User", back_populates="submissions")
     problem = relationship("Problem", back_populates="submissions")
     job = relationship("SubmissionJob", back_populates="submission", uselist=False, cascade="all, delete-orphan")
+
+
+class TrainingNotebook(Base):
+    """One immutable training notebook per student/problem/public-private split."""
+    __tablename__ = "training_notebooks"
+    __table_args__ = (UniqueConstraint("user_id", "problem_id", "submission_type",
+                                      name="uq_training_notebook_student_problem_split"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    problem_id = Column(Integer, ForeignKey("problems.id", ondelete="CASCADE"), nullable=False, index=True)
+    submission_type = Column(String(10), nullable=False)
+    filename = Column(String(255), nullable=False)
+    stored_path = Column(Text, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    user = relationship("User", back_populates="training_notebooks")
+    problem = relationship("Problem", back_populates="training_notebooks")
 
 
 class SubmissionJob(Base):

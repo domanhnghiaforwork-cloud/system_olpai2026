@@ -46,6 +46,8 @@ export interface Problem {
   max_private_submissions?: number;
   is_locked?: boolean;
   unlock_at?: string | null;
+  public_is_locked?: boolean;
+  public_unlock_at?: string | null;
   private_is_locked?: boolean;
   private_unlock_at?: string | null;
   evaluation_config?: string | null;
@@ -92,6 +94,17 @@ export interface Submission {
   description?: string;
   logs?: string;
   created_at: string;
+}
+
+export interface TrainingNotebook {
+  id: number;
+  user_id: number;
+  problem_id: number;
+  submission_type: 'public' | 'private';
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  download_url: string;
 }
 
 export interface AdminSubmission {

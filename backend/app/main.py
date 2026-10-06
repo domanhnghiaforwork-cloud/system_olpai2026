@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, SessionLocal
 from .seed_data import init_seed_data
 from .chatbot_provisioning import provisioning_lifespan
-from .routers import auth, problems, submissions, leaderboard, datasets, admin
+from .routers import auth, problems, submissions, leaderboard, datasets, admin, training_notebooks
 from .upload_limits import SubmissionBodyLimit
 
 from sqlalchemy import inspect, text
@@ -29,6 +29,8 @@ with engine.connect() as conn:
         "ALTER TABLE problems ADD COLUMN max_private_submissions INTEGER DEFAULT 2",
         "ALTER TABLE problems ADD COLUMN is_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE problems ADD COLUMN unlock_at TIMESTAMP",
+        "ALTER TABLE problems ADD COLUMN public_is_locked BOOLEAN DEFAULT 0",
+        "ALTER TABLE problems ADD COLUMN public_unlock_at TIMESTAMP",
         "ALTER TABLE problems ADD COLUMN private_is_locked BOOLEAN DEFAULT 0",
         "ALTER TABLE problems ADD COLUMN private_unlock_at TIMESTAMP",
         "ALTER TABLE datasets ADD COLUMN is_locked BOOLEAN DEFAULT 0",
@@ -83,6 +85,7 @@ app.add_middleware(SubmissionBodyLimit)
 app.include_router(auth.router)
 app.include_router(problems.router)
 app.include_router(submissions.router)
+app.include_router(training_notebooks.router)
 app.include_router(leaderboard.router)
 app.include_router(datasets.router)
 app.include_router(admin.router)

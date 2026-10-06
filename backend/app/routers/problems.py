@@ -27,6 +27,10 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         else:
             raw_unlock = raw_unlock.astimezone(datetime.timezone.utc)
 
+    raw_public_unlock = getattr(p, 'public_unlock_at', None)
+    if raw_public_unlock is not None:
+        raw_public_unlock = raw_public_unlock.replace(tzinfo=datetime.timezone.utc) if raw_public_unlock.tzinfo is None else raw_public_unlock.astimezone(datetime.timezone.utc)
+
     raw_private_unlock = getattr(p, 'private_unlock_at', None)
     if raw_private_unlock is not None:
         if raw_private_unlock.tzinfo is None:
@@ -50,6 +54,8 @@ def serialize_problem(p: Problem) -> ProblemResponse:
         max_private_submissions=getattr(p, 'max_private_submissions', 2) or 2,
         is_locked=bool(getattr(p, 'is_locked', False)),
         unlock_at=raw_unlock,
+        public_is_locked=bool(getattr(p, 'public_is_locked', False)),
+        public_unlock_at=raw_public_unlock,
         private_is_locked=bool(getattr(p, 'private_is_locked', False)),
         private_unlock_at=raw_private_unlock,
         evaluation_config=getattr(p, 'evaluation_config', None),
@@ -129,6 +135,8 @@ def create_problem(
     max_private_submissions: int = Form(2),
     is_locked: bool = Form(False),
     unlock_at: Optional[str] = Form(None),
+    public_is_locked: bool = Form(False),
+    public_unlock_at: Optional[str] = Form(None),
     private_is_locked: bool = Form(False),
     private_unlock_at: Optional[str] = Form(None),
     evaluation_config: Optional[str] = Form(None),
@@ -166,6 +174,15 @@ def create_problem(
             except Exception:
                 parsed_unlock_at = None
 
+    parsed_public_unlock_at = None
+    if public_unlock_at and public_unlock_at.strip():
+        try:
+            parsed_public_unlock_at = datetime.datetime.fromisoformat(public_unlock_at.strip().replace("Z", "+00:00"))
+            if parsed_public_unlock_at.tzinfo is not None:
+                parsed_public_unlock_at = parsed_public_unlock_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        except ValueError as error:
+            raise HTTPException(422, "Thời gian mở Public không hợp lệ.") from error
+
     parsed_private_unlock_at = None
     if private_unlock_at and private_unlock_at.strip():
         try:
@@ -190,6 +207,8 @@ def create_problem(
         max_private_submissions=max_private_submissions,
         is_locked=is_locked,
         unlock_at=parsed_unlock_at,
+        public_is_locked=public_is_locked,
+        public_unlock_at=parsed_public_unlock_at,
         private_is_locked=private_is_locked,
         private_unlock_at=parsed_private_unlock_at,
         evaluation_config=clean_eval_config,
@@ -240,6 +259,13 @@ def update_problem(
         if val is not None and val.tzinfo is not None:
             val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         problem.unlock_at = val
+    if "public_is_locked" in fields_set:
+        problem.public_is_locked = bool(problem_in.public_is_locked)
+    if "public_unlock_at" in fields_set:
+        val = problem_in.public_unlock_at
+        if val is not None and val.tzinfo is not None:
+            val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        problem.public_unlock_at = val
     if "private_is_locked" in fields_set:
         problem.private_is_locked = bool(problem_in.private_is_locked)
     if "private_unlock_at" in fields_set:

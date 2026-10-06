@@ -72,11 +72,10 @@ def validate_problem(problem, submission_type, is_admin):
             not problem.unlock_at and problem.is_locked
         ):
             raise HTTPException(403, "Đề bài chưa mở nhận bài nộp.")
-        if submission_type == "private" and (
-            (problem.private_unlock_at and now < problem.private_unlock_at.replace(tzinfo=None))
-            or (not problem.private_unlock_at and problem.private_is_locked)
-        ):
-            raise HTTPException(403, "Khu vực nộp bài Private chưa mở.")
+        split_unlock_at = getattr(problem, f"{submission_type}_unlock_at", None)
+        split_locked = getattr(problem, f"{submission_type}_is_locked", False)
+        if (split_unlock_at and now < split_unlock_at.replace(tzinfo=None)) or (not split_unlock_at and split_locked):
+            raise HTTPException(403, f"Khu vực nộp bài {submission_type.capitalize()} chưa mở.")
     return config
 
 

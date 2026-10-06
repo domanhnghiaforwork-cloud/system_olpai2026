@@ -19,10 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import engine, SessionLocal
-from app.models import Problem, Submission, SubmissionJob, User
+from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User
 from app.auth_utils import create_access_token
 from app.evaluators.base import EvaluationValidationResult, EvaluationScoreResult
 from app.submission_jobs import claim_jobs, evaluate_job, finish_job
+from app.routers import training_notebooks
 
 
 class TestEvaluator:
@@ -44,6 +45,10 @@ class SubmissionQueueTest(unittest.TestCase):
         self.patch = patch("app.submission_jobs.get_evaluator", return_value=TestEvaluator())
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        self.notebook_directory = Path(work.name) / 'notebooks'
+        notebook_patch = patch.object(training_notebooks, 'NOTEBOOK_DIR', self.notebook_directory)
+        notebook_patch.start()
+        self.addCleanup(notebook_patch.stop)
         with SessionLocal() as db:
             db.query(SubmissionJob).delete()
             db.query(Submission).delete()
@@ -275,6 +280,148 @@ class SubmissionQueueTest(unittest.TestCase):
         for row in overall:
             component = next(c for c in row['components'] if c['problem_id'] == self.problem_id)
             self.assertEqual(component['submission_id'], expected[row['user_id']])
+
+    def notebook_bytes(self):
+        # Keeping this code in the stored notebook must never execute it.
+        return json.dumps({'nbformat': 4, 'nbformat_minor': 5, 'metadata': {}, 'cells': [
+            {'cell_type': 'code', 'id': 'train-cell', 'metadata': {}, 'execution_count': None,
+             'outputs': [], 'source': 'raise RuntimeError("Never execute uploaded code")'}
+        ]}).encode('utf-8')
+
+    def notebook_upload(self, split='public', content=None, filename='training.ipynb', headers=None, problem_id=None):
+        return self.client.post('/api/training-notebooks', headers=headers or self.headers[0],
+                                data={'problem_id': problem_id or self.problem_id, 'submission_type': split},
+                                files={'file': (filename, self.notebook_bytes() if content is None else content, 'application/octet-stream')})
+
+    def test_notebooks_allow_one_per_split_and_authorized_downloads(self):
+        for split in ('public', 'private'):
+            response = self.notebook_upload(split)
+            self.assertEqual(response.status_code, 201, response.text)
+            notebook = response.json()
+            self.assertNotIn('stored_path', notebook)
+            self.assertEqual(notebook['submission_type'], split)
+            url = notebook['download_url']
+            self.assertEqual(self.client.get(url, headers=self.headers[0]).content, self.notebook_bytes())
+            self.assertEqual(self.client.get(url, headers=self.headers[1]).status_code, 404)
+            self.assertEqual(self.client.get(url, headers=self.headers[2]).status_code, 200)
+            self.assertEqual(self.notebook_upload(split).status_code, 409)
+        params = {'problem_id': self.problem_id}
+        owner = self.client.get('/api/training-notebooks', params=params, headers=self.headers[0]).json()
+        self.assertEqual(len(owner), 2)
+        other = self.client.get('/api/training-notebooks', params={**params, 'user_id': self.ids[0]}, headers=self.headers[1]).json()
+        self.assertEqual(other, [])
+        self.assertEqual(len(self.client.get('/api/training-notebooks', params=params, headers=self.headers[2]).json()), 2)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Submission).count(), 0)
+
+    def test_notebook_slots_are_independent_of_csv_quota_students_and_problems(self):
+        self.upload()
+        self.finish()
+        self.assertEqual(self.upload().status_code, 400)
+        self.assertEqual(self.notebook_upload().status_code, 201)
+        self.assertEqual(self.notebook_upload(headers=self.headers[1]).status_code, 201)
+        with SessionLocal() as db:
+            second = Problem(code=uuid4().hex[:12], title='Second', evaluation_config='test')
+            db.add(second)
+            db.commit()
+            second_id = second.id
+        self.assertEqual(self.notebook_upload(problem_id=second_id).status_code, 201)
+
+    def test_notebooks_reject_bad_format_without_consuming_slot(self):
+        cases = [b'', b'not json', b'\xff', b'[]', b'{}',
+                 b'{"nbformat":4,"nbformat_minor":5,"metadata":{},"cells":[{"cell_type":"bad"}]}']
+        for content in cases:
+            with self.subTest(content=content[:32]):
+                self.assertEqual(self.notebook_upload(content=content).status_code, 422)
+        self.assertEqual(self.notebook_upload(filename='training.csv').status_code, 422)
+        self.assertEqual(self.notebook_upload(split='all').status_code, 422)
+        self.assertEqual(self.notebook_upload(content=b'\xef\xbb\xbf' + self.notebook_bytes(), filename='train.IPYNB').status_code, 201)
+
+    def test_notebooks_respect_phase_locks_and_student_only_uploads(self):
+        self.assertEqual(self.notebook_upload(headers=self.headers[2]).status_code, 403)
+        self.assertEqual(self.client.get('/api/training-notebooks', params={'problem_id': self.problem_id}).status_code, 401)
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).private_is_locked = True
+            db.commit()
+        self.assertEqual(self.notebook_upload('private').status_code, 403)
+        self.assertEqual(self.notebook_upload('public').status_code, 201)
+        with SessionLocal() as db:
+            problem = db.get(Problem, self.problem_id)
+            problem.private_is_locked = False
+            problem.unlock_at = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+            db.commit()
+        self.assertEqual(self.notebook_upload('private').status_code, 403)
+        with SessionLocal() as db:
+            problem = db.get(Problem, self.problem_id)
+            problem.unlock_at = None
+            problem.is_locked = True
+            db.commit()
+        self.assertEqual(self.notebook_upload('private').status_code, 403)
+        with SessionLocal() as db:
+            problem = db.get(Problem, self.problem_id)
+            problem.is_locked = False
+            problem.evaluation_config = None
+            db.commit()
+        self.assertEqual(self.notebook_upload('private').status_code, 400)
+
+    def test_parallel_notebook_uploads_store_exactly_one_file(self):
+        before = set(self.notebook_directory.glob('*.ipynb'))
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            responses = list(pool.map(lambda _: self.notebook_upload(), range(10)))
+        self.assertEqual(sum(response.status_code == 201 for response in responses), 1)
+        self.assertEqual(sum(response.status_code == 409 for response in responses), 9)
+        after = set(self.notebook_directory.glob('*.ipynb'))
+        self.assertEqual(len(after - before), 1)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(TrainingNotebook).filter_by(problem_id=self.problem_id).count(), 1)
+
+    def test_oversized_notebook_file_and_chunked_body_do_not_consume_slot(self):
+        before = set(self.notebook_directory.glob('*.ipynb'))
+        self.assertEqual(self.notebook_upload(content=b'x' * (20 * 1024**2 + 1)).status_code, 413)
+        chunked = self.client.post('/api/training-notebooks', headers={**self.headers[0], 'Content-Type': 'multipart/form-data; boundary=a'},
+                                   content=iter([b'x' * (1024**2)] * 22))
+        self.assertEqual(chunked.status_code, 413)
+        self.assertEqual(set(self.notebook_directory.glob('*.ipynb')), before)
+        self.assertEqual(self.notebook_upload().status_code, 201)
+
+    def test_failed_notebook_commit_cleans_up_file_and_keeps_slot_free(self):
+        before = set(self.notebook_directory.glob('*.ipynb'))
+        with patch('sqlalchemy.orm.Session.commit', side_effect=RuntimeError('Database unavailable')):
+            with self.assertRaises(RuntimeError):
+                self.notebook_upload()
+        self.assertEqual(set(self.notebook_directory.glob('*.ipynb')), before)
+        self.assertEqual(self.notebook_upload().status_code, 201)
+
+    def test_public_private_schedules_apply_identically_to_csv_and_notebooks(self):
+        endpoint = f'/api/problems/{self.problem_id}'
+        future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        past = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).isoformat()
+        for split in ('public', 'private'):
+            with self.subTest(split=split):
+                response = self.client.put(endpoint, headers=self.headers[2], json={
+                    f'{split}_is_locked': True, f'{split}_unlock_at': future,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()[f'{split}_is_locked'])
+                self.assertEqual(self.upload(split=split).status_code, 403)
+                self.assertEqual(self.notebook_upload(split).status_code, 403)
+                self.client.put(endpoint, headers=self.headers[2], json={f'{split}_unlock_at': None})
+                self.assertEqual(self.upload(split=split).status_code, 403)
+                self.assertEqual(self.notebook_upload(split).status_code, 403)
+                self.client.put(endpoint, headers=self.headers[2], json={f'{split}_unlock_at': past})
+                self.assertEqual(self.upload(split=split).status_code, 202)
+                self.assertEqual(self.notebook_upload(split).status_code, 201)
+
+    def test_public_schedule_round_trips_vietnam_time_and_student_cannot_change_it(self):
+        endpoint = f'/api/problems/{self.problem_id}'
+        payload = {'public_is_locked': True, 'public_unlock_at': '2026-10-07T15:30:00+07:00'}
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[0], json=payload).status_code, 403)
+        response = self.client.put(endpoint, headers=self.headers[2], json=payload)
+        self.assertEqual(response.status_code, 200)
+        stored = datetime.datetime.fromisoformat(response.json()['public_unlock_at'].replace('Z', '+00:00'))
+        self.assertEqual(stored, datetime.datetime(2026, 10, 7, 8, 30, tzinfo=datetime.timezone.utc))
+        self.assertEqual(self.client.get(endpoint).json()['public_unlock_at'], response.json()['public_unlock_at'])
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[2], json={'public_unlock_at': 'bad'}).status_code, 422)
 
 
 if __name__ == "__main__":

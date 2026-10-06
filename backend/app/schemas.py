@@ -2,6 +2,17 @@ from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
 
+
+class TrainingNotebookResponse(BaseModel):
+    id: int
+    user_id: int
+    problem_id: int
+    submission_type: str
+    filename: str
+    size_bytes: int
+    created_at: datetime
+    download_url: str
+
 # User Schemas
 class UserBase(BaseModel):
     username: str
@@ -72,6 +83,8 @@ class ProblemBase(BaseModel):
     max_private_submissions: int = 2
     is_locked: bool = False
     unlock_at: Optional[datetime] = None
+    public_is_locked: bool = False
+    public_unlock_at: Optional[datetime] = None
     private_is_locked: bool = False
     private_unlock_at: Optional[datetime] = None
     evaluation_config: Optional[str] = None
@@ -90,6 +103,8 @@ class ProblemUpdate(BaseModel):
     max_private_submissions: Optional[int] = None
     is_locked: Optional[bool] = None
     unlock_at: Optional[datetime] = None
+    public_is_locked: Optional[bool] = None
+    public_unlock_at: Optional[datetime] = None
     private_is_locked: Optional[bool] = None
     private_unlock_at: Optional[datetime] = None
     evaluation_config: Optional[str] = None

@@ -128,6 +128,29 @@ Truy cập trình duyệt tại địa chỉ: [http://localhost:3000](http://loc
 
 ---
 
+## Notebook huấn luyện Public / Private
+
+Trong **Nộp bài → Điểm số cao nhất**, mỗi tab Public/Private hiển thị điểm của
+tập đó và phần nộp notebook huấn luyện `.ipynb`. Mỗi tài khoản sinh viên có
+một lượt nộp notebook cho mỗi tập của từng đề, độc lập với hạn mức CSV.
+Notebook đã nhận không thể ghi đè; sinh viên có thể tải lại file của mình.
+Điểm Private vẫn được giữ kín theo quyền hiện có.
+
+Backend kiểm tra notebook Jupyter hợp lệ, UTF-8, tối đa 20 MiB và thời gian
+mở đề/tập. File được lưu nguyên vẹn, không chạy mã trong notebook. Thư mục mặc
+định là `uploads/training_notebooks`, có thể đổi bằng `TRAINING_NOTEBOOK_UPLOAD_DIR`.
+API đăng nhập: `GET/POST /api/training-notebooks` và
+`GET /api/training-notebooks/{id}/download`; Admin được liệt kê/tải notebook của
+sinh viên. Ràng buộc database bảo đảm gửi đồng thời chỉ nhận một notebook.
+
+Admin đặt lịch tại **Cấu hình lịch nộp Public / Private** trên cổng nộp bài.
+Mỗi tập có trạng thái khóa và giờ mở riêng, áp dụng đồng thời cho CSV và notebook.
+Thời gian nhập theo giờ Việt Nam và lưu UTC; hết đếm ngược thì tự mở cả hai.
+
+Cài lại `backend/requirements.txt` và khởi động lại backend để tạo bảng
+`training_notebooks` tự động. Nếu dùng Docker, rebuild backend và frontend;
+file được giữ trong volume uploads hiện có.
+
 ## 🎨 Tông Màu & Ngôn Ngữ Thiết Kế
 - **Xanh nước biển (Ocean Blue `#0284c7`, `#1d4ed8`, `#0f172a`)**: Đại diện cho công nghệ, trí tuệ nhân tạo và sự ổn định.
 - **Đỏ KMA (`#dc2626`, `#b91c1c`)**: Màu cờ và thương hiệu truyền thống của Học viện Kỹ thuật Mật mã, dùng làm điểm nhấn cho các nút hành động, huy hiệu LIVE, và nút nộp bài.
