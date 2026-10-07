@@ -45,7 +45,8 @@ Mặc định dùng đáp án đóng gói trong `labels_eval_2/`.
   Bảng tổng hợp vẫn dùng quy tắc cộng điểm hiện có của hệ thống.
 - Validation và evaluation dùng chung kết quả cache, phân biệt phase và phiên
   bản của cả bài nộp lẫn đáp án. Điểm không xuất hiện trong thông báo validation;
-  quyền xem điểm private theo cơ chế hiện có của hệ thống.
+  điểm Private được trả cho đội sở hữu bài và Admin. Bảng xếp hạng Private
+  chỉ dành cho Admin; các đội khác không truy cập được kết quả Private của đội nộp.
 
 Phụ thuộc SacreBLEU và RapidFuzz được pin cùng phiên bản với
 `tung_nlp/olp_26/contest_web/requirements.txt`.

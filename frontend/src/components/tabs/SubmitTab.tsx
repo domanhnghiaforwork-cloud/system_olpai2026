@@ -864,7 +864,6 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             currentUser={currentUser}
             bestPublicScore={bestPublicScore}
             bestPrivateScore={bestPrivateScore}
-            hasPrivateSubmission={userProblemSubs.some((submission) => submission.submission_type === 'private' && (submission.status === 'HỢP LỆ' || submission.status === 'SUCCESS'))}
             privateLocked={isPrivateLocked}
             publicLocked={isPublicLocked}
             publicCountdown={publicLockStatus.type === 'COUNTDOWN' ? publicLockStatus.formatted : undefined}

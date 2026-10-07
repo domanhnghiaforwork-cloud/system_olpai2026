@@ -134,7 +134,9 @@ Trong **Nộp bài → Điểm số cao nhất**, mỗi tab Public/Private hiể
 tập đó và phần nộp notebook huấn luyện `.ipynb`. Mỗi tài khoản sinh viên có
 một lượt nộp notebook cho mỗi tập của từng đề, độc lập với hạn mức CSV.
 Notebook đã nhận không thể ghi đè; sinh viên có thể tải lại file của mình.
-Điểm Private vẫn được giữ kín theo quyền hiện có.
+Đội nộp bài xem được điểm Private của chính mình trong kết quả chấm, lịch sử
+và tab Private của thẻ điểm cao nhất. Đội khác không xem được bài/điểm này;
+bảng xếp hạng Private vẫn chỉ dành cho Admin. Bảng tổng hợp chỉ cộng điểm Public.
 
 Backend kiểm tra notebook Jupyter hợp lệ, UTF-8, tối đa 20 MiB và thời gian
 mở đề/tập. File được lưu nguyên vẹn, không chạy mã trong notebook. Thư mục mặc
@@ -164,8 +166,9 @@ dùng cùng image; worker chấm ở hai tiến trình riêng, không giữ requ
 - `GET /api/submissions/{id}/status` theo dõi `QUEUED`, `PROCESSING`, `DONE`, `FAILED`.
 - `GET /api/submissions/by-request/{uuid}` xác nhận một yêu cầu khi mất phản hồi.
 - Gửi lại cùng UUID và nội dung trả đúng bài cũ; dùng lại UUID cho nội dung khác trả 409.
-- Bài đang chờ giữ một lượt nộp; lỗi định dạng/chấm điểm giải phóng lượt đó. Điểm private
-  vẫn chỉ dành cho admin. Trình duyệt lưu mã yêu cầu theo tài khoản để khôi phục theo dõi.
+- Bài đang chờ giữ một lượt nộp; lỗi định dạng/chấm điểm giải phóng lượt đó. Điểm Private
+  chỉ dành cho đội sở hữu bài và Admin; bảng xếp hạng Private chỉ dành cho Admin.
+  Trình duyệt lưu mã yêu cầu theo tài khoản để khôi phục theo dõi.
 
 `SUBMISSION_WORKER_CONCURRENCY` mặc định 2, hàng đợi tối đa 100 và file tối đa 95 MiB.
 Các giới hạn có thể cấu hình bằng `SUBMISSION_MAX_QUEUE_SIZE`, `SUBMISSION_MAX_FILE_BYTES`.

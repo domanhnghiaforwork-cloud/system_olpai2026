@@ -10,14 +10,13 @@ interface Props {
   currentUser: User | null;
   bestPublicScore: number | null;
   bestPrivateScore: number | null;
-  hasPrivateSubmission: boolean;
   privateLocked: boolean;
   publicLocked: boolean;
   publicCountdown?: string;
   privateCountdown?: string;
 }
 
-export function BestScoreNotebookCard({ problem, currentUser, bestPublicScore, bestPrivateScore, hasPrivateSubmission, privateLocked, publicLocked, publicCountdown, privateCountdown }: Props) {
+export function BestScoreNotebookCard({ problem, currentUser, bestPublicScore, bestPrivateScore, privateLocked, publicLocked, publicCountdown, privateCountdown }: Props) {
   const [tab, setTab] = useState<'public' | 'private'>('public');
   const [notebooks, setNotebooks] = useState<TrainingNotebook[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -49,7 +48,6 @@ export function BestScoreNotebookCard({ problem, currentUser, bestPublicScore, b
 
   const notebook = notebooks.find((item) => item.submission_type === tab);
   const score = tab === 'public' ? bestPublicScore : bestPrivateScore;
-  const privateScoreHidden = tab === 'private' && currentUser?.role !== 'admin';
   const locked = !problem || (tab === 'private' ? privateLocked : publicLocked);
   const countdown = tab === 'private' ? privateCountdown : publicCountdown;
   const blocked = locked || Boolean(notebook) || status !== 'ready' || uploading;
@@ -153,11 +151,11 @@ export function BestScoreNotebookCard({ problem, currentUser, bestPublicScore, b
           <div>
             <div className="text-xs font-bold text-slate-700">{tab === 'public' ? 'Public test' : 'Private test'}</div>
             <div className="text-[10px] text-slate-500 mt-1">
-              {privateScoreHidden && hasPrivateSubmission ? 'Đã nộp (Bảo mật điểm)' : score !== null && !privateScoreHidden ? `Độ đo: ${problem?.metric || 'Chuẩn'}` : 'Chưa có điểm'}
+              {score !== null ? `Độ đo: ${problem?.metric || 'Chuẩn'}` : 'Chưa có điểm'}
             </div>
           </div>
           <div className={`font-mono font-black text-xl ${tab === 'public' ? 'text-blue-700' : 'text-rose-700'}`}>
-            {privateScoreHidden ? '—' : score ?? '—'}
+            {score ?? '—'}
           </div>
         </div>
 

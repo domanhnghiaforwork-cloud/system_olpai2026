@@ -122,18 +122,59 @@ class SubmissionQueueTest(unittest.TestCase):
         self.assertEqual(self.upload(request_id).status_code, 202)
         self.assertEqual(self.upload(request_id, b"different").status_code, 409)
 
-    def test_private_score_is_hidden_and_status_is_owned(self):
-        accepted = self.upload(split="private").json()
+    def test_private_score_is_visible_to_owner_and_admin_only(self):
+        request_id = str(uuid4())
+        accepted = self.upload(request_id, split="private").json()
+        self.assertIsNone(accepted['score'])
         self.finish()
         url = f"/api/submissions/{accepted['submission_id']}/status"
         own = self.client.get(url, headers=self.headers[0]).json()
-        self.assertIsNone(own["score"])
-        self.assertIsNone(own["step2_scoring"]["score"])
-        self.assertEqual(own["step2_scoring"]["details"], {})
-        self.assertNotIn("0.75", str(own))
+        self.assertEqual(own["score"], .75)
+        self.assertEqual(own["step2_scoring"]["score"], .75)
+        self.assertEqual(own["step2_scoring"]["details"], {'mean_ap': .75})
+        self.assertIn('0.75', own['result_line'])
         self.assertEqual(self.client.get(url, headers=self.headers[1]).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 401)
         admin = self.client.get(url, headers=self.headers[2]).json()
         self.assertEqual(admin["score"], .75)
+        request_url = f'/api/submissions/by-request/{request_id}'
+        recovered = self.client.get(request_url, headers=self.headers[0]).json()
+        self.assertEqual(recovered['step2_scoring'], own['step2_scoring'])
+        self.assertEqual(self.client.get(request_url, headers=self.headers[1]).status_code, 404)
+        replayed = self.upload(request_id, split='private').json()
+        self.assertEqual(replayed['score'], .75)
+        self.assertEqual(replayed['submission_id'], accepted['submission_id'])
+        history = self.client.get('/api/submissions', headers=self.headers[0]).json()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['score'], .75)
+        self.assertIn('0.75', history[0]['logs'])
+        self.assertIsNone(history[0]['stored_path'])
+        other_history = self.client.get('/api/submissions', params={'user_id': self.ids[0]}, headers=self.headers[1]).json()
+        self.assertEqual(other_history, [])
+        download_url = f"/api/submissions/{accepted['submission_id']}/download"
+        self.assertEqual(self.client.get(download_url, headers=self.headers[0]).status_code, 200)
+        self.assertEqual(self.client.get(download_url, headers=self.headers[1]).status_code, 403)
+
+    def test_private_scores_are_excluded_from_public_boards(self):
+        self.upload(split='private')
+        self.finish()
+        with SessionLocal() as db:
+            code = db.get(Problem, self.problem_id).code
+            db.add(Submission(user_id=self.ids[1], problem_id=self.problem_id,
+                              filename='private_submit.csv', submission_type='private',
+                              status='SUCCESS', score=.99))
+            db.commit()
+        public = self.client.get('/api/leaderboard', params={'problem_code': code}, headers=self.headers[0]).json()
+        self.assertEqual(public, [])
+        self.assertEqual(self.client.get('/api/leaderboard/overall', headers=self.headers[0]).json(), [])
+        for headers in (None, self.headers[0], self.headers[1]):
+            for split in ('private', ' PRIVATE '):
+                self.assertEqual(self.client.get('/api/leaderboard', params={'problem_code': code, 'type': split},
+                                                headers=headers).status_code, 403)
+        admin = self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'}, headers=self.headers[2]).json()
+        self.assertEqual([item['best_score'] for item in admin], [.99, .75])
+        owner_history = self.client.get('/api/submissions', headers=self.headers[0]).json()
+        self.assertEqual([item['score'] for item in owner_history], [.75])
 
     def test_invalid_submission_releases_reserved_attempt(self):
         self.assertEqual(self.upload(content=b"invalid").status_code, 202)
@@ -208,7 +249,7 @@ class SubmissionQueueTest(unittest.TestCase):
         private = self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'}, headers=self.headers[2]).json()
         self.assertEqual(private[0]['best_score'], .95)
 
-    def test_nlp_configuration_worker_matches_original_and_hides_private_metrics(self):
+    def test_nlp_configuration_worker_matches_original_and_owner_sees_private_metrics(self):
         from app.evaluators import get_evaluator
         from app.evaluators.nlp_tung.scorer import score_submission
         gt = {'pub_00001': 'Xin chào bạn, hôm nay bạn khỏe không?',
@@ -238,12 +279,9 @@ class SubmissionQueueTest(unittest.TestCase):
                     self.assertEqual(admin['step2_scoring']['details'], expected)
                     self.assertEqual(admin['score'], expected['sacrebleu'])
                     owner = self.client.get(url, headers=self.headers[0]).json()
-                    if phase == 'private':
-                        self.assertIsNone(owner['score'])
-                        self.assertEqual(owner['step2_scoring']['details'], {})
-                        self.assertNotIn('CER', owner['step1_validation']['message'])
-                    else:
-                        self.assertEqual(owner['score'], 100)
+                    self.assertEqual(owner['score'], expected['sacrebleu'])
+                    self.assertEqual(owner['step2_scoring']['details'], expected)
+                    self.assertEqual(self.client.get(url, headers=self.headers[1]).status_code, 404)
 
     def test_nlp_best_submission_and_board_use_cer_exact_match_then_earliest_time(self):
         from app.routers.admin import get_valid_submissions

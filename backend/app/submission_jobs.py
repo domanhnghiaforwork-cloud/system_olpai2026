@@ -79,7 +79,8 @@ def validate_problem(problem, submission_type, is_admin):
     return config
 
 
-def serialize_job(job, is_admin=False):
+def serialize_job(job):
+    """Return complete results after the caller checks ownership/admin access."""
     sub = job.submission
     if job.result_json:
         result = json.loads(job.result_json)
@@ -93,14 +94,6 @@ def serialize_job(job, is_admin=False):
     result.update(accepted=True, submission_id=sub.id, client_request_id=job.client_request_id,
                   job_status=job.state, final_status=sub.status, status=sub.status,
                   submission_type=sub.submission_type, filename=sub.filename)
-    if sub.submission_type == "private" and not is_admin:
-        result["score"] = None
-        scoring = result.get("step2_scoring", {})
-        scoring["score"] = None
-        scoring["details"] = {}
-        if result.get("success"):
-            scoring["message"] = "Đã chấm điểm và lưu trữ an toàn. Điểm Private được giữ bí mật."
-            result["result_line"] = "Bài nộp Private hợp lệ và đã được hệ thống ghi nhận thành công."
     return result
 
 
@@ -128,7 +121,7 @@ def enqueue_submission(user_id, problem_id, submission_type, client_request_id,
                     or existing.submission.submission_type != submission_type
                     or existing.payload_sha256 != digest):
                     raise HTTPException(409, "Mã yêu cầu này đã được dùng cho một bài nộp khác.")
-                response = serialize_job(existing, is_admin)
+                response = serialize_job(existing)
                 db.rollback()
                 remove_upload(path)
                 return response
@@ -161,7 +154,7 @@ def enqueue_submission(user_id, problem_id, submission_type, client_request_id,
                                 evaluation_config=config, state="QUEUED")
             db.add(job)
             db.flush()
-            response = serialize_job(job, is_admin)
+            response = serialize_job(job)
             db.commit()
             committed = True
             if time.perf_counter() - started > 2:

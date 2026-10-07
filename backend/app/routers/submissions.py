@@ -52,18 +52,13 @@ def list_submissions(
                 file_size_str = None
 
         sub_type = getattr(sub, 'submission_type', 'public') or 'public'
-        is_private = (sub_type == 'private')
-
-        # Thí sinh thường: ẩn điểm private, ẩn đường dẫn lưu file, ẩn logs private
-        score_to_show = sub.score
+        # The query already restricts students to their own submissions. Owners
+        # can see public/private scores and logs; filesystem paths stay hidden.
         stored_path_to_show = sub.stored_path
         logs_to_show = getattr(sub, 'logs', None)
 
         if current_user.role != "admin":
             stored_path_to_show = None
-            if is_private:
-                score_to_show = None
-                logs_to_show = "Bài nộp Private đã được hệ thống ghi nhận và lưu trữ an toàn."
 
         download_url = f"/api/submissions/{sub.id}/download" if file_exists else None
 
@@ -84,7 +79,7 @@ def list_submissions(
                 download_url=download_url,
                 submission_type=sub_type,
                 status=sub.status,
-                score=score_to_show,
+                score=sub.score,
                 description=sub.description,
                 logs=logs_to_show,
                 created_at=sub.created_at
@@ -160,7 +155,7 @@ def submission_by_request(
     job = find_job(current_user.id, str(client_request_id))
     if not job:
         raise HTTPException(404, "Chưa tìm thấy bài nộp cho yêu cầu này.")
-    return serialize_job(job, current_user.role == "admin")
+    return serialize_job(job)
 
 
 @router.get("/{submission_id}/status")
@@ -172,7 +167,7 @@ def submission_status(
     job = db.query(SubmissionJob).filter_by(submission_id=submission_id).first()
     if not job or (job.user_id != current_user.id and current_user.role != "admin"):
         raise HTTPException(404, "Không tìm thấy bài nộp.")
-    return serialize_job(job, current_user.role == "admin")
+    return serialize_job(job)
 
 
 @router.post("", status_code=202)
