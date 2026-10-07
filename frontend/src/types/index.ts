@@ -141,7 +141,7 @@ export interface SubmissionJobResult {
   score: number | null;
   result_line: string;
   step1_validation?: { status: string; message: string; errors?: string[]; row_count?: number };
-  step2_scoring?: { status: string; message: string; score?: number | null };
+  step2_scoring?: { status: string; message: string; score?: number | null; metric?: string };
 }
 
 export interface LeaderboardItem {
@@ -157,6 +157,7 @@ export interface LeaderboardItem {
 }
 
 export interface ProblemScoreComponent {
+  // score is already converted to 0–100 points by the overall leaderboard API.
   problem_id: number;
   problem_code: string;
   problem_title: string;
@@ -167,6 +168,7 @@ export interface ProblemScoreComponent {
 }
 
 export interface OverallLeaderboardItem {
+  // total_score is the sum of normalized component points; no further scaling.
   rank: number;
   user_id: number;
   full_name: string;

@@ -204,6 +204,7 @@ class LeaderboardItem(BaseModel):
     submission_type: Optional[str] = "public"
 
 class ProblemScoreComponent(BaseModel):
+    """Overall leaderboard component: score is expressed on the 0–100 scale."""
     problem_id: int
     problem_code: str
     problem_title: str
@@ -213,6 +214,7 @@ class ProblemScoreComponent(BaseModel):
     submitted_at: Optional[datetime] = None
 
 class OverallLeaderboardItem(BaseModel):
+    """Total is the sum of component points (two problems can yield 200)."""
     rank: int
     user_id: int
     full_name: str

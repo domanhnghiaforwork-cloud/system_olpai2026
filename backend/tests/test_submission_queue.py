@@ -237,7 +237,7 @@ class SubmissionQueueTest(unittest.TestCase):
             earliest_id = first.id
         overall = self.client.get('/api/leaderboard/overall').json()
         self.assertEqual(overall[0]['user_id'], self.ids[0])
-        self.assertEqual(overall[0]['total_score'], 1.0)
+        self.assertEqual(overall[0]['total_score'], 100.0)
         best = next(p for p in overall[0]['components'] if p['problem_id'] == self.problem_id)
         self.assertEqual(best['submission_id'], earliest_id)
         public = self.client.get('/api/leaderboard', params={'problem_code': code}).json()
@@ -248,6 +248,56 @@ class SubmissionQueueTest(unittest.TestCase):
                                         headers=self.headers[0]).status_code, 403)
         private = self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'}, headers=self.headers[2]).json()
         self.assertEqual(private[0]['best_score'], .95)
+
+    def test_overall_leaderboard_adds_normalized_cv_nlp_points_and_ranks_consistently(self):
+        with SessionLocal() as db:
+            cv = db.get(Problem, self.problem_id)
+            cv.evaluation_config = 'eval_1_cv_hico'
+            cv.metric = 'mAP'
+            nlp = Problem(code=uuid4().hex[:12], title='NLP', metric='SacreBLEU', evaluation_config='eval_2_nlp_tung')
+            db.add(nlp)
+            db.flush()
+            nlp_id = nlp.id
+            for uid, cv_score, nlp_score in ((self.ids[0], .95, 60.0), (self.ids[1], .5, 90.0)):
+                db.add_all([
+                    Submission(user_id=uid, problem_id=cv.id, filename='submission.csv', status='SUCCESS', submission_type='public', score=cv_score),
+                    Submission(user_id=uid, problem_id=nlp.id, filename='submission.csv', status='SUCCESS', submission_type='public', score=nlp_score),
+                ])
+            # Private submissions never contribute to the displayed total.
+            db.add(Submission(user_id=self.ids[1], problem_id=nlp.id, filename='submission.csv', status='SUCCESS', submission_type='private', score=100))
+            db.commit()
+        items = self.client.get('/api/leaderboard/overall').json()
+        self.assertEqual([item['user_id'] for item in items], self.ids[:2])
+        self.assertEqual([item['total_score'] for item in items], [155.0, 140.0])
+        components = {component['problem_id']: component['score'] for component in items[0]['components']}
+        self.assertEqual(components[self.problem_id], 95.0)
+        self.assertEqual(components[nlp_id], 60.0)
+        with SessionLocal() as db:
+            scores = db.query(Submission.score).filter_by(user_id=self.ids[0], submission_type='public').all()
+            self.assertEqual(sorted(value[0] for value in scores), [.95, 60.0])
+
+    def test_leaderboard_preserves_native_precision_and_does_not_rescale_low_bleu(self):
+        with SessionLocal() as db:
+            problem = db.get(Problem, self.problem_id)
+            problem.metric = 'mAP'
+            problem.evaluation_config = 'eval_1_cv_hico'
+            code = problem.code
+            db.add(Submission(user_id=self.ids[0], problem_id=problem.id, filename='submission.csv',
+                              status='SUCCESS', submission_type='public', score=.931549))
+            nlp = Problem(code=uuid4().hex[:12], title='Low BLEU', metric='SacreBLEU', evaluation_config='eval_2_nlp_tung')
+            db.add(nlp)
+            db.flush()
+            nlp_id = nlp.id
+            db.add(Submission(user_id=self.ids[0], problem_id=nlp.id, filename='submission.csv',
+                              status='SUCCESS', submission_type='public', score=.75))
+            db.commit()
+        individual = self.client.get('/api/leaderboard', params={'problem_code': code}).json()
+        self.assertEqual(individual[0]['best_score'], .931549)
+        overall = self.client.get('/api/leaderboard/overall').json()
+        components = {component['problem_id']: component['score'] for component in overall[0]['components']}
+        self.assertEqual(components[self.problem_id], 93.1549)
+        self.assertEqual(components[nlp_id], .75)
+        self.assertEqual(overall[0]['total_score'], 93.9049)
 
     def test_nlp_configuration_worker_matches_original_and_owner_sees_private_metrics(self):
         from app.evaluators import get_evaluator

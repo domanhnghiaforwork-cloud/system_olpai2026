@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Download, FileCode2, Loader2, Trophy, UploadCloud } from 'lucide-react';
 import { Problem, TrainingNotebook, User } from '@/types';
 import { downloadTrainingNotebook, fetchTrainingNotebooks, submitTrainingNotebook } from '@/lib/api';
+import { formatScore } from '@/lib/scoreDisplay';
 
 interface Props {
   problem: Problem | undefined;
@@ -151,11 +152,11 @@ export function BestScoreNotebookCard({ problem, currentUser, bestPublicScore, b
           <div>
             <div className="text-xs font-bold text-slate-700">{tab === 'public' ? 'Public test' : 'Private test'}</div>
             <div className="text-[10px] text-slate-500 mt-1">
-              {score !== null ? `Độ đo: ${problem?.metric || 'Chuẩn'}` : 'Chưa có điểm'}
+              {score !== null ? `Độ đo: ${problem?.metric || 'Chuẩn'} • Thang 100` : 'Chưa có điểm'}
             </div>
           </div>
           <div className={`font-mono font-black text-xl ${tab === 'public' ? 'text-blue-700' : 'text-rose-700'}`}>
-            {score ?? '—'}
+            {formatScore(score, problem)}
           </div>
         </div>
 

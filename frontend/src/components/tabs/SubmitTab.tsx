@@ -26,6 +26,7 @@ import { prepareSubmission, readPendingSubmission, sendAndTrackSubmission, track
 import { BestScoreNotebookCard } from '@/components/BestScoreNotebookCard';
 import { SubmissionScheduleFields } from '@/components/SubmissionScheduleFields';
 import { getItemLockStatus, toVietnamDatetimeLocal, vietnamDatetimeToUtc } from '@/lib/countdown';
+import { formatScore } from '@/lib/scoreDisplay';
 
 interface SubmitTabProps {
   problems: Problem[];
@@ -76,16 +77,29 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const [editPrivateUnlockAt, setEditPrivateUnlockAt] = useState('');
   const [isSavingLimits, setIsSavingLimits] = useState(false);
 
+  const isAdmin = currentUser?.role === 'admin';
+  const availableProblems = problems.filter((problem) => (
+    getItemLockStatus(problem.is_locked, problem.unlock_at, now).type === 'UNLOCKED'
+    && Boolean(problem.evaluation_config && problem.evaluation_config.trim() !== '')
+  ));
+  const activeProblem = availableProblems.find((problem) => problem.id === selectedProblemId) || availableProblems[0];
+  const activeProblemId = activeProblem?.id ?? 0;
+  const hasNoProblems = availableProblems.length === 0;
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const trackingController = useRef<AbortController | null>(null);
   const completionCallback = useRef(onSubmissionSuccess);
 
   const showJob = (job: SubmissionJobResult) => {
+    const scoreContext = job.step2_scoring?.metric ? { metric: job.step2_scoring.metric } : activeProblem;
+    const normalizedResult = job.success && job.score !== null
+      ? `Điểm số đạt được: ${formatScore(job.score, scoreContext)}/100 (${scoreContext?.metric || 'Độ đo'})`
+      : job.result_line;
     setStep1Msg(job.step1_validation?.message || 'Đang kiểm tra bài nộp.');
-    setStep2Msg(job.step2_scoring?.message || 'Đang chấm điểm.');
+    setStep2Msg(job.success ? `Chấm điểm thành công trên tập ${job.submission_type.toUpperCase()}.` : job.step2_scoring?.message || 'Đang chấm điểm.');
     if (job.job_status === 'DONE' || job.job_status === 'FAILED') {
       setPipelineStep(job.success ? 'finished' : 'error');
-      setResultLine(job.result_line);
+      setResultLine(normalizedResult);
       setErrorMsg(job.success ? null : job.result_line);
       if (job.success) {
         setFile(null);
@@ -128,23 +142,6 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   }, [currentUser?.id]);
 
   useEffect(() => () => trackingController.current?.abort(), []);
-
-  const isAdmin = currentUser?.role === 'admin';
-
-  // -------------------------------------------------------------
-  // LỌC DANH SÁCH ĐỀ BÀI: KHÔNG CHO XUẤT HIỆN ĐỀ ĐANG KHÓA HOẶC ĐẾM NGƯỢC
-  // VÀ CHỈ ĐỀ ĐÃ ĐƯỢC CHỌN CẤU HÌNH ĐÁNH GIÁ MỚI ĐƯỢC ĐƯA VÀO DANH SÁCH ĐỂ NỘP
-  // -------------------------------------------------------------
-  const availableProblems = problems.filter((p) => {
-    const lockStatus = getItemLockStatus(p.is_locked, p.unlock_at, now);
-    const isUnlocked = lockStatus.type === 'UNLOCKED';
-    const hasEvalConfig = Boolean(p.evaluation_config && p.evaluation_config.trim() !== '');
-    return isUnlocked && hasEvalConfig;
-  });
-
-  const activeProblem = availableProblems.find((p) => p.id === selectedProblemId) || availableProblems[0];
-  const activeProblemId = activeProblem?.id ?? 0;
-  const hasNoProblems = availableProblems.length === 0;
 
   // Tự động đồng bộ đề thi nếu đề hiện tại bị khóa hoặc đang đếm ngược
   useEffect(() => {
@@ -892,7 +889,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 <th className="py-3 px-3 whitespace-nowrap">Loại nộp</th>
                 <th className="py-3 px-3 whitespace-nowrap">Tên file</th>
                 <th className="py-3 px-4 text-center whitespace-nowrap min-w-[140px]">Trạng thái</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">Điểm số</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">Điểm số /100</th>
                 <th className="py-3 px-3 max-w-[180px] truncate">Nhật ký</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Thời gian</th>
                 <th className="py-3 px-3 text-center whitespace-nowrap min-w-[95px]">Tải file</th>
@@ -915,6 +912,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   const displayedFilename = sub.filename === 'public_submit.csv' || sub.filename === 'private_submit.csv'
                     ? 'File kết quả (.csv)'
                     : sub.filename;
+                  const scoreProblem = problems.find((problem) => problem.id === sub.problem_id);
+                  const displayedLogs = isSuccess && sub.score !== null && sub.score !== undefined
+                    ? `Điểm: ${formatScore(sub.score, scoreProblem)}/100 (${scoreProblem?.metric || 'Độ đo'})`
+                    : sub.logs || 'Chấm điểm tự động';
 
                   return (
                     <tr 
@@ -952,10 +953,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-black text-slate-900 text-sm whitespace-nowrap">
-                        {sub.score !== null && sub.score !== undefined ? sub.score : '—'}
+                        {formatScore(sub.score, scoreProblem)}
                       </td>
-                      <td className="py-3 px-3 text-slate-500 max-w-[180px] truncate" title={sub.logs || ''}>
-                        {sub.logs || 'Chấm điểm tự động'}
+                      <td className="py-3 px-3 text-slate-500 max-w-[180px] truncate" title={displayedLogs}>
+                        {displayedLogs}
                       </td>
                       <td className="py-3 px-3 text-right text-slate-400 whitespace-nowrap text-[11px]">
                         {new Date(sub.created_at).toLocaleString('vi-VN')}

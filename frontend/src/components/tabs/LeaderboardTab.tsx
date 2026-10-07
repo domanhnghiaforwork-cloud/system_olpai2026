@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { LeaderboardItem, OverallLeaderboardItem, Problem, User } from '@/types';
+import { formatPoints, formatScore } from '@/lib/scoreDisplay';
 import { 
   RefreshCw, 
   Lock, 
@@ -69,7 +70,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {leaderboardType === 'overall' ? (
               <span>
-                Xếp hạng tổng hợp dựa trên <strong>tổng điểm Public cao nhất</strong> của tất cả <strong>{problems.length} đề thi</strong> • Cập nhật tự động
+                Tổng điểm Public cao nhất của <strong>{problems.length} đề thi</strong>, mỗi đề tối đa <strong>100 điểm</strong> • Cập nhật tự động
               </span>
             ) : (
               <span>
@@ -193,7 +194,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
           <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span className="truncate">
             {leaderboardType === 'overall'
-              ? 'Tổng điểm tất cả các đề = Tổng(điểm public cao nhất từng đề)'
+              ? `Tổng điểm Public • Tối đa ${problems.length * 100} điểm`
               : leaderboardType === 'public'
               ? 'Xếp hạng dựa trên kết quả chạy tập kiểm thử Public Test'
               : 'Xếp hạng bảo mật đánh giá kết quả tập Private Test (Chung cuộc)'}
@@ -230,7 +231,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   <th className="py-4 px-6">Đội thi / Thí sinh</th>
                   <th className="py-4 px-6 text-center w-36">Tiến độ bài thi</th>
                   <th className="py-4 px-6 text-right min-w-[260px]">
-                    <div>Tổng điểm Public</div>
+                    <div>Tổng điểm Public (tối đa {problems.length * 100})</div>
                     <span className="block text-[10px] font-semibold text-amber-700 lowercase">
                       (kèm điểm thành phần từng đề)
                     </span>
@@ -312,7 +313,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                             <span className={`font-mono text-lg font-black ${
                               isTop1 ? 'text-amber-600' : 'text-blue-700'
                             }`}>
-                              {typeof item.total_score === 'number' ? item.total_score.toFixed(4) : item.total_score}
+                              {formatPoints(item.total_score)}
                             </span>
                           </div>
 
@@ -328,11 +329,11 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                                       ? 'text-blue-900 font-medium'
                                       : 'text-slate-400'
                                   }`}
-                                  title={`${comp.problem_code} - ${comp.problem_title} (${comp.metric || 'Score'}): ${hasScore ? comp.score : 'Chưa nộp'}`}
+                                  title={`${comp.problem_code} - ${comp.problem_title} (${comp.metric || 'Score'}): ${hasScore ? `${formatPoints(comp.score)}/100` : 'Chưa nộp'}`}
                                 >
                                   <span className="font-sans font-bold text-slate-500">{comp.problem_code}:</span>
                                   <span className={hasScore ? 'font-black text-blue-800' : 'text-slate-400 italic'}>
-                                    {hasScore ? Number(comp.score).toFixed(4) : '—'}
+                                    {formatPoints(comp.score)}
                                   </span>
                                 </span>
                               );
@@ -369,7 +370,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   <th className="py-4 px-6">Đội thi / Thí sinh</th>
                   <th className="py-4 px-6">Bài thi</th>
                   <th className="py-4 px-6 text-right">
-                    Điểm cao nhất ({currentProblem?.metric || 'Score'})
+                    Điểm cao nhất /100 ({currentProblem?.metric || 'Score'})
                     {leaderboardType === 'private' && (
                       <span className="block text-[10px] font-semibold text-purple-600 lowercase">(private test)</span>
                     )}
@@ -441,7 +442,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                           <span className={`font-mono text-base font-extrabold ${
                             isTop1 ? 'text-red-600' : leaderboardType === 'private' ? 'text-purple-700' : 'text-blue-700'
                           }`}>
-                            {typeof item.best_score === 'number' ? item.best_score.toFixed(4) : item.best_score}
+                            {formatScore(item.best_score, currentProblem)}
                           </span>
                         </td>
 

@@ -6,6 +6,7 @@ from typing import List, Optional
 from ..database import get_db
 from ..models import Submission, SubmissionJob, User, Problem
 from ..evaluators.ranking import nlp_tie_breakers, submission_order_by
+from ..evaluators.score_scale import score_on_hundred
 from ..schemas import LeaderboardItem, OverallLeaderboardItem, ProblemScoreComponent
 from ..auth_utils import get_current_user_optional
 
@@ -55,12 +56,12 @@ def get_overall_leaderboard(db: Session = Depends(get_db)):
         total = 0.0
         for problem in problems:
             row = scores.get(problem.id)
-            score = round(row["score"], 4) if row else None
+            score = score_on_hundred(row["score"], problem.metric, problem.evaluation_config) if row else None
             if score is not None:
                 total += score
             components.append(ProblemScoreComponent(
                 problem_id=problem.id, problem_code=problem.code, problem_title=problem.title,
-                metric=problem.metric, score=score,
+                metric=problem.metric, score=round(score, 4) if score is not None else None,
                 submission_id=row["submission_id"] if row else None,
                 submitted_at=row["created_at"] if row else None,
             ))
@@ -107,7 +108,7 @@ def get_leaderboard(
             rank=rank, user_id=user.id if user else 0,
             full_name=user.full_name if user else "User",
             team_name=(user.team_name or user.username) if user else "Team",
-            problem_code=problem.code, best_score=round(row["score"], 4),
+            problem_code=problem.code, best_score=row["score"],
             total_submissions=row["total_submissions"], last_submission_time=row["last_time"],
             submission_type=split,
         ))

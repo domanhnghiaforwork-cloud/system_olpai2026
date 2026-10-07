@@ -130,6 +130,13 @@ Truy cập trình duyệt tại địa chỉ: [http://localhost:3000](http://loc
 
 ## Notebook huấn luyện Public / Private
 
+Điểm trên **Bảng xếp hạng** và **Nộp bài** hiển thị theo thang 100, lấy hai chữ
+số thập phân (ví dụ mAP `0.9315` thành `93,15`; SacreBLEU `79.5123` thành `79,51`).
+Điểm gốc trong database và bộ chấm không đổi. Bảng tổng hợp cộng điểm Public
+đã quy đổi của từng đề: hai đề có tổng tối đa 200; thứ hạng dùng tổng này.
+Giao diện làm tròn hai chữ số; backend giữ độ chính xác cao hơn khi xếp hạng
+và phá hòa, không dùng điểm hiển thị hai chữ số để quyết định thứ hạng.
+
 Trong **Nộp bài → Điểm số cao nhất**, mỗi tab Public/Private hiển thị điểm của
 tập đó và phần nộp notebook huấn luyện `.ipynb`. Mỗi tài khoản sinh viên có
 một lượt nộp notebook cho mỗi tập của từng đề, độc lập với hạn mức CSV.
