@@ -191,9 +191,9 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         <p role="alert" className="p-6 text-center text-slate-500">Bảng xếp hạng Private chỉ dành cho Admin.</p>
       ) : isOverall ? (
         <div className={`bg-white rounded-3xl border shadow-xs overflow-hidden ${isPrivate ? 'border-purple-200' : 'border-amber-200/80'}`}>
-          <div className="overflow-x-auto">
+          <div className="max-h-[min(60vh,560px)] overflow-auto overscroll-contain [scrollbar-gutter:stable]" role="region" aria-label={`Bảng xếp hạng tổng ${splitLabel}`} tabIndex={0}>
             <table className="w-full text-left text-sm">
-              <thead className={`border-b text-xs font-bold uppercase tracking-wider ${isPrivate ? 'bg-purple-50/60 border-purple-100 text-purple-800' : 'bg-amber-50/50 border-amber-100 text-amber-900'}`}>
+              <thead className={`sticky top-0 z-10 border-b text-xs font-bold uppercase tracking-wider ${isPrivate ? 'bg-purple-50 border-purple-100 text-purple-800' : 'bg-amber-50 border-amber-100 text-amber-900'}`}>
                 <tr>
                   <th className="py-4 px-6 text-center w-20">Hạng</th>
                   <th className="py-4 px-6">Đội thi</th>
@@ -323,12 +323,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         <div className={`bg-white rounded-3xl border shadow-xs overflow-hidden ${
           leaderboardType === 'private' ? 'border-purple-200' : 'border-slate-200'
         }`}>
-          <div className="overflow-x-auto">
+          <div className="max-h-[min(60vh,560px)] overflow-auto overscroll-contain [scrollbar-gutter:stable]" role="region" aria-label={`Bảng xếp hạng ${splitLabel} từng đề`} tabIndex={0}>
             <table className="w-full text-left text-sm">
-              <thead className={`border-b text-xs font-bold uppercase tracking-wider ${
+              <thead className={`sticky top-0 z-10 border-b text-xs font-bold uppercase tracking-wider ${
                 leaderboardType === 'private' 
-                  ? 'bg-purple-50/60 border-purple-100 text-purple-800'
-                  : 'bg-slate-50/90 border-slate-200 text-slate-500'
+                  ? 'bg-purple-50 border-purple-100 text-purple-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-500'
               }`}>
                 <tr>
                   <th className="py-4 px-6 text-center w-20">Hạng</th>

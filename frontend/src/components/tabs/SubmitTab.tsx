@@ -847,9 +847,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="max-h-[min(60vh,560px)] overflow-auto overscroll-contain [scrollbar-gutter:stable]" role="region" aria-label="Lịch sử nộp bài" tabIndex={0}>
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+            <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">Mã đề</th>
                 <th className="py-3 px-3 whitespace-nowrap">Loại nộp</th>
