@@ -8,11 +8,12 @@ interface Props {
   locked: boolean;
   unlockAt: string;
   problemUnlockAt?: string | null;
+  showIcons?: boolean;
   onLockedChange: (locked: boolean) => void;
   onUnlockAtChange: (value: string) => void;
 }
 
-export function SubmissionScheduleFields({ split, locked, unlockAt, problemUnlockAt, onLockedChange, onUnlockAtChange }: Props) {
+export function SubmissionScheduleFields({ split, locked, unlockAt, problemUnlockAt, showIcons = true, onLockedChange, onUnlockAtChange }: Props) {
   const name = split === 'public' ? 'Public' : 'Private';
   return (
     <fieldset className={`rounded-2xl border p-4 space-y-3 ${split === 'public' ? 'border-blue-200 bg-blue-50/40' : 'border-rose-200 bg-rose-50/40'}`}>
@@ -21,7 +22,7 @@ export function SubmissionScheduleFields({ split, locked, unlockAt, problemUnloc
         <input type="checkbox" checked={locked} onChange={(event) => onLockedChange(event.target.checked)} className="accent-blue-600" />
         Khóa {name} khi chưa đặt giờ mở
       </label>
-      <label htmlFor={`schedule-${split}`} className="flex items-center gap-1.5 text-xs font-bold text-slate-700"><Clock className="w-3.5 h-3.5" />Giờ mở {name} (giờ Việt Nam)</label>
+      <label htmlFor={`schedule-${split}`} className="flex items-center gap-1.5 text-xs font-bold text-slate-700">{showIcons && <Clock className="w-3.5 h-3.5" />}Giờ mở {name} (giờ Việt Nam)</label>
       <input id={`schedule-${split}`} type="datetime-local" value={unlockAt} onChange={(event) => onUnlockAtChange(event.target.value)}
         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono focus:border-blue-500 focus:outline-hidden" />
       <div className="flex flex-wrap gap-2">

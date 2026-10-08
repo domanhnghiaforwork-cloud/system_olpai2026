@@ -1,1 +1,37 @@
 @import "tailwindcss";
+
+.submission-selection-shine {
+  color: #16a34a;
+  background-image: linear-gradient(
+    110deg,
+    #16a34a 0%,
+    #16a34a 44%,
+    #dcfce7 49%,
+    #4ade80 51%,
+    #16a34a 56%,
+    #16a34a 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: submission-selection-shine 3.5s ease-in-out infinite;
+}
+
+@keyframes submission-selection-shine {
+  0%, 15% {
+    background-position: 100% 0;
+  }
+  65%, 100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submission-selection-shine {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}

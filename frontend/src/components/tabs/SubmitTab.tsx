@@ -2,25 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Problem, Submission, User, SubmissionJobResult } from '@/types';
-import { 
-  UploadCloud, 
-  FileCheck, 
-  AlertCircle, 
-  CheckCircle2, 
-  FileSpreadsheet, 
-  Send, 
-  Loader2, 
-  Check, 
-  Sparkles, 
-  Lock, 
-  Globe, 
-  Settings, 
-  X,
-  AlertTriangle,
-  Ban,
-  Clock,
-  Download
-} from 'lucide-react';
 import { updateProblem, getCandidateSubmissionDownloadUrl } from '@/lib/api';
 import { prepareSubmission, readPendingSubmission, sendAndTrackSubmission, trackSubmission } from '@/lib/submissionTracker';
 import { BestScoreNotebookCard } from '@/components/BestScoreNotebookCard';
@@ -187,14 +168,14 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   // Lọc số lần đã nộp hợp lệ của người dùng hiện tại đối với đề bài này
   const usedPublic = submissions.filter(
-    (s) => s.problem_id === activeProblemId && 
+    (s) => s.problem_id === activeProblemId &&
            (s.submission_type === 'public' || !s.submission_type) &&
            (currentUser ? s.user_id === currentUser.id : true) &&
            isCountedSubmission(s)
   ).length;
 
   const usedPrivate = submissions.filter(
-    (s) => s.problem_id === activeProblemId && 
+    (s) => s.problem_id === activeProblemId &&
            s.submission_type === 'private' &&
            (currentUser ? s.user_id === currentUser.id : true) &&
            isCountedSubmission(s)
@@ -207,7 +188,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   // TÍNH TOÁN ĐIỂM SỐ CAO NHẤT CỦA THÍ SINH (PUBLIC & PRIVATE)
   // -------------------------------------------------------------
   const userProblemSubs = submissions.filter(
-    (s) => s.problem_id === activeProblemId && 
+    (s) => s.problem_id === activeProblemId &&
            (currentUser ? s.user_id === currentUser.id : true)
   );
 
@@ -391,10 +372,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            {/* <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shadow-xs">
-              <UploadCloud className="w-4 h-4" />
-            </div> */}
-            <span>Cổng Nộp Bài Thi & Chấm Điểm Tự Động OLP AI KMA</span>
+                        <span>Cổng Nộp Bài Thi & Chấm Điểm Tự Động OLP AI KMA</span>
           </h2>
         </div>
 
@@ -405,17 +383,17 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
             title="Chỉnh sửa lượt nộp CSV và lịch mở nộp CSV/notebook Public, Private"
           >
-            <Settings className="w-3.5 h-3.5 text-red-400" />
+
             <span>Cấu hình lịch nộp Public / Private (Admin)</span>
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         {/* Left Form: Submit Box */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
+        <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 px-6 py-4 sm:px-8 sm:py-6 shadow-xs space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+
             {/* 1. Chọn đề bài (Chỉ các đề đã mở khóa và có Cấu hình đánh giá mới được đưa vào danh sách) */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
@@ -423,7 +401,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
               </label>
               {hasNoProblems ? (
                 <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+
                   <div>
                     <p className="font-bold text-slate-900 mb-0.5">Chưa có đề thi nào sẵn sàng nhận bài nộp</p>
                     <p className="text-slate-600">
@@ -447,7 +425,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   </select>
                   {isAdmin && activeProblem?.evaluation_config && (
                     <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3.5 py-2 rounded-xl font-medium">
-                      <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+
                       <span>
                         Hệ thống chấm tự động: <span className="font-mono font-bold text-indigo-900 bg-indigo-100/70 px-1.5 py-0.5 rounded">{activeProblem.evaluation_config}</span> • Độ đo chuẩn: <strong className="text-slate-800">{activeProblem?.metric || 'Độ đo'}</strong>
                       </span>
@@ -469,7 +447,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     onClick={handleOpenEditLimits}
                     className="text-[11px] text-red-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    <Settings className="w-3 h-3" />
+
                     <span>Lịch nộp Public / Private</span>
                   </button>
                 )}
@@ -495,7 +473,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       <span className="text-xs font-bold text-blue-700">
                         Public test
                       </span>
-                      <Globe className="w-4 h-4 text-blue-600" />
+
                     </div>
                   </div>
 
@@ -512,8 +490,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${
                       hasNoProblems
                         ? 'bg-slate-100 text-slate-500'
-                        : isPublicExhausted 
-                        ? 'bg-rose-100 text-rose-700' 
+                        : isPublicExhausted
+                        ? 'bg-rose-100 text-rose-700'
                         : 'bg-blue-100 text-blue-800'
                     }`}>
                       {hasNoProblems ? '—' : `${usedPublic}/${maxPublic} lần`} {isPublicExhausted && !hasNoProblems ? '• HẾT LƯỢT' : ''}
@@ -541,13 +519,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       <span className="text-xs font-bold text-red-700">
                         Private test
                       </span>
-                      {privateLockStatus.type === 'COUNTDOWN' ? (
-                        <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
-                      ) : privateLockStatus.type === 'LOCKED' ? (
-                        <Lock className="w-4 h-4 text-rose-600" />
-                      ) : (
-                        <Lock className="w-4 h-4 text-red-600" />
-                      )}
+
                     </div>
                     <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
                       {isAdmin && privateLockStatus.type !== 'UNLOCKED' && (
@@ -563,7 +535,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     {privateLockStatus.type === 'COUNTDOWN' ? (
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-amber-600" />
+
                           <span>Mở sau:</span>
                         </span>
                         <span className="text-xs font-black font-mono px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200 animate-pulse">
@@ -584,8 +556,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${
                         hasNoProblems
                           ? 'bg-slate-100 text-slate-500'
-                          : isPrivateExhausted 
-                          ? 'bg-rose-100 text-rose-700' 
+                          : isPrivateExhausted
+                          ? 'bg-rose-100 text-rose-700'
                           : 'bg-red-100 text-red-800'
                       }`}>
                         {hasNoProblems ? '—' : `${usedPrivate}/${maxPrivate} lần`} {isPrivateExhausted && !hasNoProblems ? '• HẾT LƯỢT' : ''}
@@ -602,12 +574,22 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 3. Tải lên tệp kết quả dự đoán (.csv):
               </label>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
-                <div className="min-w-0">
+              {activeProblem && (
+                <div className="submission-selection-shine mb-2 flex w-fit flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm font-semibold" aria-live="polite">
+                  <span>Bạn đã chọn:</span>
+                  {activeProblem.category === 'CV' && <span>Computer Vision</span>}
+                  {activeProblem.category === 'NLP' && <span>Natural Language Processing</span>}
+                  {submissionType === 'public' && <span>Public test</span>}
+                  {submissionType === 'private' && <span>Private test</span>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-stretch">
+                <div className="min-w-0 flex flex-col">
                   {/* Thông báo nếu không có đề mở hoặc hết số lần nộp */}
                   {hasNoProblems ? (
                     <div className="mb-3 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
-                      <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+
                       <div>
                         <div className="font-bold text-amber-900">
                           Chưa có đề thi nào mở để nộp bài!
@@ -619,7 +601,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     </div>
                   ) : isCurrentExhausted ? (
                     <div className="mb-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 text-xs animate-in fade-in duration-150">
-                      <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+
                       <div>
                         <div className="font-bold text-rose-900">
                           Đã hết số lần nộp cho {currentSplitName} test!
@@ -638,7 +620,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     onClick={() => {
                       if (!isCurrentBlocked && !isWorking) fileInputRef.current?.click();
                     }}
-                    className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
+                    className={`flex-1 flex flex-col justify-center border-2 border-dashed rounded-2xl px-6 py-1 sm:px-8 text-center transition-all ${
                       isCurrentBlocked
                         ? 'opacity-40 pointer-events-none cursor-not-allowed bg-slate-100 border-slate-300'
                         : file
@@ -657,10 +639,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
                     {hasNoProblems ? (
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                          <Lock className="w-6 h-6" />
-                        </div>
-                        <div className="text-sm font-bold text-slate-600">
+
+                        <div className="text-sm leading-4 font-bold text-slate-600">
                           Khu vực nộp bài đang tạm khóa
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
@@ -669,10 +649,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       </div>
                     ) : isCurrentLocked ? (
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                          <Lock className="w-6 h-6" />
-                        </div>
-                        <div className="text-sm font-bold text-slate-600">
+
+                        <div className="text-sm leading-4 font-bold text-slate-600">
                           Khu vực nộp {currentSplitName} đang khóa
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
@@ -681,10 +659,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       </div>
                     ) : isCurrentExhausted ? (
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center mb-2">
-                          <Ban className="w-6 h-6" />
-                        </div>
-                        <div className="text-sm font-bold text-slate-600">
+
+                        <div className="text-sm leading-4 font-bold text-slate-600">
                           Khu vực nộp bài đã bị vô hiệu hóa
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
@@ -693,10 +669,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       </div>
                     ) : file ? (
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
-                          <FileCheck className="w-6 h-6" />
-                        </div>
-                        <div className="text-sm font-bold text-slate-800 font-mono">{file.name}</div>
+
+                        <div className="text-sm leading-4 font-bold text-slate-800 font-mono">{file.name}</div>
                         <div className="text-xs text-slate-500 mt-0.5">
                           {(file.size / 1024).toFixed(1)} KB
                         </div>
@@ -706,10 +680,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       </div>
                     ) : (
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
-                          <UploadCloud className="w-6 h-6" />
-                        </div>
-                        <div className="text-sm font-bold text-slate-800">
+
+                        <div className="text-sm leading-4 font-bold text-slate-800">
                           Kéo thả file CSV vào đây hoặc <span className="text-blue-600 underline">chọn file</span>
                         </div>
                         <div className="text-xs text-slate-400 mt-1">
@@ -721,9 +693,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 </div>
 
                 {/* Step-by-step progress cards */}
-                <div className="space-y-3 min-w-0" aria-live="polite">
+                <div className="flex flex-col gap-2 min-w-0" aria-live="polite">
                   {/* Bước 1: Kiểm tra file */}
-                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                  <div className={`flex-1 flex flex-col justify-center p-3 rounded-2xl border transition-all ${
                     pipelineStep === 'step1'
                       ? 'border-blue-400 bg-blue-50/50 shadow-xs'
                       : pipelineStep === 'step2' || pipelineStep === 'finished'
@@ -732,7 +704,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       ? 'border-rose-200 bg-rose-50/30'
                       : 'border-slate-200 bg-slate-50/40'
                   }`}>
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center justify-between">
                       <div className="flex min-w-0 items-start gap-2">
                         <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${
                           pipelineStep === 'step1'
@@ -746,36 +718,33 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           1
                         </span>
                         <span className="font-bold text-[11px] leading-4 text-slate-900">
-                          Quy trình 1: Kiểm tra tính hợp lệ file CSV
+                          Kiểm tra tính hợp lệ file CSV
                         </span>
                       </div>
 
-                      {pipelineStep === 'step1' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
-                      {(pipelineStep === 'step2' || pipelineStep === 'finished') && (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      )}
-                      {pipelineStep === 'error' && <AlertCircle className="w-4 h-4 text-rose-600" />}
                     </div>
 
-                    <div className="text-[11px] text-slate-500 pl-7 space-y-1">
-                      <div>{step1Msg || 'Kiểm tra đuôi .csv, định dạng bảng, tiêu đề cột và số dòng dự đoán.'}</div>
-                      {pipelineStep === 'error' && (
-                        <div className="text-emerald-700 font-semibold text-[11px] flex items-center gap-1 mt-1">
-                          <span>💡 Lỗi ở quy trình kiểm tra này không bị trừ số lần nộp của bạn.</span>
-                        </div>
+                    {(step1Msg || pipelineStep === 'error') && (
+                      <div className="mt-1.5 text-[11px] text-slate-500 pl-7 space-y-1">
+                        {step1Msg && <div>{step1Msg}</div>}
+                        {pipelineStep === 'error' && (
+                          <div className="text-emerald-700 font-semibold text-[11px] flex items-center gap-1 mt-1">
+                            <span>Lỗi ở quy trình kiểm tra này không bị trừ số lần nộp của bạn.</span>
+                          </div>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* Bước 2: Chấm điểm */}
-                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                  <div className={`flex-1 flex flex-col justify-center p-3 rounded-2xl border transition-all ${
                     pipelineStep === 'step2'
                       ? 'border-blue-400 bg-blue-50/50 shadow-xs'
                       : pipelineStep === 'finished'
                       ? 'border-emerald-200 bg-emerald-50/30'
                       : 'border-slate-200 bg-slate-50/40 opacity-70'
                   }`}>
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center justify-between">
                       <div className="flex min-w-0 items-start gap-2">
                         <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${
                           pipelineStep === 'step2'
@@ -787,20 +756,20 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           2
                         </span>
                         <span className="font-bold text-[11px] leading-4 text-slate-900">
-                          Quy trình 2: Chấm điểm ({activeProblem?.metric || 'Độ đo'})
+                          Chấm điểm ({activeProblem?.metric || 'mAP'})
                         </span>
                       </div>
 
-                      {pipelineStep === 'step2' && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
-                      {pipelineStep === 'finished' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
                     </div>
 
-                    <div className="text-[11px] text-slate-500 pl-7">
-                      {step2Msg || `Tính toán điểm số theo độ đo ${activeProblem?.metric || 'chuẩn'} trên tập ${submissionType.toUpperCase()}.`}
-                      {resultLine && pipelineStep === 'finished' && (
-                        <p className="mt-2 font-semibold text-emerald-700">{resultLine}</p>
+                    {(step2Msg || (resultLine && pipelineStep === 'finished')) && (
+                      <div className="mt-1.5 text-[11px] text-slate-500 pl-7">
+                        {step2Msg}
+                        {resultLine && pipelineStep === 'finished' && (
+                          <p className="mt-2 font-semibold text-emerald-700">{resultLine}</p>
                       )}
                     </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -809,7 +778,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             {/* Error Message if any */}
             {errorMsg && (
               <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2 font-medium">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+
                 <span>{errorMsg}</span>
               </div>
             )}
@@ -822,27 +791,27 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             >
               {hasNoProblems ? (
                 <>
-                  <Lock className="w-4 h-4" />
+
                   <span>Đề thi đang khóa - Không thể nộp bài</span>
                 </>
               ) : isCurrentLocked ? (
                 <>
-                  <Lock className="w-4 h-4" />
+
                   <span>Vòng {currentSplitName} đang khóa</span>
                 </>
               ) : isCurrentExhausted ? (
                 <>
-                  <Ban className="w-4 h-4" />
+
                   <span>Đã hết số lần nộp bài ({currentUsed}/{currentMax})</span>
                 </>
               ) : pipelineStep === 'step1' || pipelineStep === 'step2' ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+
                   <span>Đang thực thi quy trình kiểm tra & chấm điểm...</span>
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4" />
+
                   <span>Tiến hành nộp bài</span>
                 </>
               )}
@@ -851,7 +820,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
         </div>
 
         {/* Right Info: Highest scores */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className="lg:col-span-4 min-w-0">
           <BestScoreNotebookCard
             key={`${currentUser?.id ?? 0}:${activeProblemId}`}
             problem={activeProblem}
@@ -870,7 +839,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+
             <span>Lịch sử và nhật ký trạng thái tất cả các lần nộp bài</span>
           </h3>
           <span className="text-xs font-semibold text-slate-500">
@@ -915,8 +884,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     : sub.logs || 'Chấm điểm tự động';
 
                   return (
-                    <tr 
-                      key={sub.id} 
+                    <tr
+                      key={sub.id}
                       className={`transition-colors ${
                         isBest
                           ? 'bg-amber-100/75 hover:bg-amber-100 border-l-4 border-l-amber-500 font-medium'
@@ -924,15 +893,15 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                       }`}
                     >
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <span className="font-mono font-black text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 inline-block shadow-2xs">
+                        <span className="font-mono font-bold text-xs text-blue-700">
                           {displayCode}
                         </span>
                       </td>
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold ${
-                          isPrivate 
-                            ? 'bg-rose-100 text-rose-800 border border-rose-200' 
-                            : 'bg-blue-100 text-blue-800 border border-blue-200'
+                        <span className={`font-mono text-[10px] font-bold ${
+                          isPrivate
+                            ? 'text-rose-700'
+                            : 'text-blue-700'
                         }`}>
                           {isPrivate ? 'Private test' : 'Public test'}
                         </span>
@@ -941,10 +910,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                         {displayedFilename}
                       </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap min-w-[140px]">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap inline-block ${
+                        <span className={`text-[10px] font-bold whitespace-nowrap ${
                           isSuccess
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : isPending ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'
+                            ? 'text-emerald-700'
+                            : isPending ? 'text-blue-700' : 'text-rose-700'
                         }`}>
                           {sub.status === 'QUEUED' ? 'CHỜ KIỂM TRA' : sub.status === 'PROCESSING' ? 'ĐANG CHẤM' : sub.status}
                         </span>
@@ -964,17 +933,17 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                             href={getCandidateSubmissionDownloadUrl(sub.id)}
                             download={sub.filename || `${sub.submission_type || 'public'}_submit.csv`}
                             title={`Tải xuống ${displayedFilename || 'file bài nộp'}`}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 hover:border-blue-300 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer whitespace-nowrap"
+                            className="text-xs font-bold text-blue-700 hover:underline cursor-pointer whitespace-nowrap"
                           >
-                            <Download className="w-3.5 h-3.5 text-blue-600" />
+
                             <span>Tải về</span>
                           </a>
                         ) : (
                           <span
                             title="File không còn trên hệ thống (hoặc đã bị hủy do lỗi định dạng)"
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed whitespace-nowrap"
+                            className="text-[10px] text-slate-400 cursor-not-allowed whitespace-nowrap"
                           >
-                            <Download className="w-3 h-3 opacity-40" />
+
                             <span>Không có</span>
                           </span>
                         )}
@@ -996,15 +965,15 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
           <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] flex flex-col p-6 sm:p-8 shadow-2xl border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-red-600" />
+
                 <span>Lịch nộp Public / Private [{activeProblem?.code || ''}]</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setIsEditLimitsOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+                className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer transition-colors"
               >
-                <X className="w-4 h-4" />
+                Đóng
               </button>
             </div>
 
@@ -1054,11 +1023,13 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
               </div>
 
               <SubmissionScheduleFields
+                showIcons={false}
                 split="public" locked={editPublicIsLocked} unlockAt={editPublicUnlockAt}
                 problemUnlockAt={activeProblem.unlock_at}
                 onLockedChange={setEditPublicIsLocked} onUnlockAtChange={setEditPublicUnlockAt}
               />
               <SubmissionScheduleFields
+                showIcons={false}
                 split="private" locked={editPrivateIsLocked} unlockAt={editPrivateUnlockAt}
                 problemUnlockAt={activeProblem.unlock_at}
                 onLockedChange={setEditPrivateIsLocked} onUnlockAtChange={setEditPrivateUnlockAt}
@@ -1077,7 +1048,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                   disabled={isSavingLimits}
                   className="px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
-                  {isSavingLimits ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+
                   <span>{isSavingLimits ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
                 </button>
               </div>
