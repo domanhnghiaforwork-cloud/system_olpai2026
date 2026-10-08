@@ -16,6 +16,7 @@ from sqlalchemy import and_, or_, text
 from .database import SessionLocal
 from .evaluators import get_evaluator
 from .models import Problem, Submission, SubmissionJob
+from .leaderboard_events import bump_leaderboard_revision
 
 logger = logging.getLogger(__name__)
 UPLOAD_DIR = Path(os.getenv("SUBMISSION_UPLOAD_DIR", "./uploads/submissions"))
@@ -255,6 +256,8 @@ def finish_job(claimed, result):
         delete_path = sub.stored_path if not result["success"] else None
         if delete_path:
             sub.stored_path = None
+        if result["success"] and sub.score is not None:
+            bump_leaderboard_revision(db, sub.submission_type or "public")
         db.commit()
     if delete_path:
         remove_upload(delete_path)

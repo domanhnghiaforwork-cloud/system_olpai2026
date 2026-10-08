@@ -1,5 +1,6 @@
 import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select
 from typing import List, Optional
@@ -9,8 +10,26 @@ from ..evaluators.ranking import nlp_tie_breakers, submission_order_by
 from ..evaluators.score_scale import score_on_hundred
 from ..schemas import LeaderboardItem, OverallLeaderboardItem, ProblemScoreComponent
 from ..auth_utils import get_current_user_optional
+from ..leaderboard_events import leaderboard_event_stream
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
+
+
+@router.get("/events")
+def leaderboard_events(
+    request: Request,
+    type: str = Query("public", pattern="^(public|private)$"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    if type == "private" and (not current_user or current_user.role != "admin"):
+        raise HTTPException(403, "Thông báo bảng xếp hạng Private chỉ dành cho Admin.")
+    # Release the authentication query's connection before streaming.
+    db.rollback()
+    return StreamingResponse(
+        leaderboard_event_stream(request, type), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 def best_submission_rows(db, problem_ids, submission_type):

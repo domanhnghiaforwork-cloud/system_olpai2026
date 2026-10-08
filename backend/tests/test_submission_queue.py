@@ -1,10 +1,14 @@
 """Regression tests for concurrent reservations, replay, privacy and worker recovery."""
 import datetime
+import asyncio
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
+import socket
+import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
@@ -17,6 +21,7 @@ os.environ.update(DATABASE_PATH=str(Path(work.name) / "test.db"), SUBMISSION_UPL
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
+import httpx
 from app.main import app
 from app.database import engine, SessionLocal
 from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User
@@ -121,6 +126,126 @@ class SubmissionQueueTest(unittest.TestCase):
         request_id = str(uuid4())
         self.assertEqual(self.upload(request_id).status_code, 202)
         self.assertEqual(self.upload(request_id, b"different").status_code, 409)
+
+    def test_leaderboard_revision_tracks_committed_successful_scores_only(self):
+        from app.leaderboard_events import read_leaderboard_revision
+        public = read_leaderboard_revision('public')
+        private = read_leaderboard_revision('private')
+        self.assertEqual(self.upload(content=b'invalid').status_code, 202)
+        self.finish()
+        self.assertEqual(read_leaderboard_revision('public'), public)
+        self.assertEqual(self.upload().status_code, 202)
+        self.assertEqual(read_leaderboard_revision('public'), public)
+        job = self.finish()
+        self.assertEqual(read_leaderboard_revision('public'), public + 1)
+        finish_job(job, evaluate_job(job))  # A replay must not notify twice.
+        self.assertEqual(read_leaderboard_revision('public'), public + 1)
+        self.assertEqual(read_leaderboard_revision('private'), private)
+        self.assertEqual(self.upload(split='private').status_code, 202)
+        self.finish()
+        self.assertEqual(read_leaderboard_revision('private'), private + 1)
+
+    def test_leaderboard_stream_detects_other_sessions_and_keeps_splits_separate(self):
+        from app import leaderboard_events
+
+        class Request:
+            disconnected = False
+
+            async def is_disconnected(self):
+                return self.disconnected
+
+        async def check():
+            request = Request()
+            stream = leaderboard_events.leaderboard_event_stream(request, 'public')
+            first = await anext(stream)
+            self.assertIn('event: ready', first)
+            with SessionLocal() as db:
+                leaderboard_events.bump_leaderboard_revision(db, 'public')
+                db.commit()
+            changed = await anext(stream)
+            self.assertIn('event: leaderboard-change', changed)
+            self.assertNotIn('score', changed)
+            self.assertNotIn('user_id', changed)
+            with SessionLocal() as db:
+                leaderboard_events.bump_leaderboard_revision(db, 'private')
+                db.commit()
+            self.assertEqual(await anext(stream), ': heartbeat\n\n')
+            request.disconnected = True
+            with self.assertRaises(StopAsyncIteration):
+                await anext(stream)
+
+        with patch.object(leaderboard_events, 'POLL_SECONDS', 0), patch.object(leaderboard_events, 'HEARTBEAT_SECONDS', 0):
+            asyncio.run(check())
+
+    def test_leaderboard_stream_permissions_and_proxy_headers(self):
+        async def finite_stream(request, split):
+            yield 'event: ready\ndata: {"version": 0}\n\n'
+
+        with patch('app.routers.leaderboard.leaderboard_event_stream', finite_stream):
+            response = self.client.get('/api/leaderboard/events')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('text/event-stream', response.headers['content-type'])
+            self.assertEqual(response.headers['x-accel-buffering'], 'no')
+            self.assertIn('no-cache', response.headers['cache-control'])
+            for headers in ({}, self.headers[0]):
+                self.assertEqual(self.client.get('/api/leaderboard/events?type=private', headers=headers).status_code, 403)
+            self.assertEqual(self.client.get('/api/leaderboard/events?type=private', headers=self.headers[2]).status_code, 200)
+            self.assertEqual(self.client.get('/api/leaderboard/events?type=bad').status_code, 422)
+
+    def test_http_stream_notifies_after_worker_commits_in_another_process(self):
+        # A separate API process must see finish_job's notification via SQLite.
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).evaluation_config = 'eval_1_cv_hico'
+            db.commit()
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            port = listener.getsockname()[1]
+        process = subprocess.Popen(
+            [sys.executable, '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(port)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env={**os.environ, 'ENVIRONMENT': 'development'},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+        )
+        try:
+            with httpx.Client(base_url=f'http://127.0.0.1:{port}', timeout=10) as client:
+                deadline = time.monotonic() + 30
+                while True:
+                    self.assertIsNone(process.poll(), 'Isolated API exited before becoming ready')
+                    try:
+                        if client.get('/').status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    self.assertLess(time.monotonic(), deadline, 'Isolated API startup timed out')
+                    time.sleep(.2)
+                with client.stream('GET', '/api/leaderboard/events?type=public') as response:
+                    self.assertEqual(response.status_code, 200)
+                    lines = response.iter_lines()
+                    self.assertIn('event: ready', [next(lines) for _ in range(4)])
+                    accepted = client.post('/api/submissions', headers=self.headers[0],
+                                           data={'problem_id': self.problem_id, 'submission_type': 'public',
+                                                 'client_request_id': str(uuid4())},
+                                           files={'file': ('my predictions.csv', b'valid', 'text/csv')})
+                    self.assertEqual(accepted.status_code, 202, accepted.text)
+                    self.finish()  # Parent process plays the role of the grading worker.
+                    frame = []
+                    while True:
+                        line = next(lines)
+                        if not line and frame:
+                            break
+                        if line:
+                            frame.append(line)
+                    self.assertIn('event: leaderboard-change', frame)
+                    board = client.get('/api/leaderboard', params={'problem_code': self.problem.code}).json()
+                    self.assertEqual(board[0]['best_score'], .75)
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
 
     def test_private_score_is_visible_to_owner_and_admin_only(self):
         request_id = str(uuid4())

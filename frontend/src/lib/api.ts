@@ -40,7 +40,7 @@ export function clearAuthToken(): void {
   }
 }
 
-function getAuthHeaders(isJson: boolean = false): Record<string, string> {
+export function getAuthHeaders(isJson: boolean = false): Record<string, string> {
   const headers: Record<string, string> = {
     'ngrok-skip-browser-warning': 'true',
   };
@@ -389,7 +389,8 @@ export async function findSubmissionByRequest(requestId: string, signal?: AbortS
 
 export async function fetchLeaderboard(
   problemCode?: string,
-  type: 'public' | 'private' = 'public'
+  type: 'public' | 'private' = 'public',
+  signal?: AbortSignal,
 ): Promise<LeaderboardItem[]> {
   const params = new URLSearchParams();
   if (problemCode) params.set('problem_code', problemCode);
@@ -399,7 +400,7 @@ export async function fetchLeaderboard(
   const res = await fetch(url, { 
     cache: 'no-store',
     headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(15_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -408,12 +409,12 @@ export async function fetchLeaderboard(
   return res.json();
 }
 
-export async function fetchOverallLeaderboard(type: 'public' | 'private' = 'public'): Promise<OverallLeaderboardItem[]> {
+export async function fetchOverallLeaderboard(type: 'public' | 'private' = 'public', signal?: AbortSignal): Promise<OverallLeaderboardItem[]> {
   const url = `${API_BASE}/api/leaderboard/overall?type=${type}`;
   const res = await fetch(url, { 
     cache: 'no-store',
     headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(15_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

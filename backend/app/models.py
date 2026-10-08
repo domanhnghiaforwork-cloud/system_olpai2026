@@ -20,6 +20,14 @@ class User(Base):
     training_notebooks = relationship("TrainingNotebook", back_populates="user", cascade="all, delete-orphan")
 
 
+class LeaderboardRevision(Base):
+    """Shared notification counter, committed atomically with a scored submission."""
+    __tablename__ = "leaderboard_revisions"
+
+    split = Column(String(10), primary_key=True)
+    version = Column(Integer, nullable=False, default=0)
+
+
 class ChatbotProvisionJob(Base):
     """Committed with a new account; retained until chatbot acknowledges it."""
     __tablename__ = "chatbot_provision_jobs"

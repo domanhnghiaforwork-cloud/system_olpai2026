@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+.leaderboard-connecting-dots {
+  display: inline-block;
+  width: 1.2em;
+  clip-path: inset(0 66.666% 0 0);
+  animation: leaderboard-connecting-dots 1.2s steps(1, end) infinite;
+}
+
+@keyframes leaderboard-connecting-dots {
+  0%, 32% { clip-path: inset(0 66.666% 0 0); }
+  33%, 65% { clip-path: inset(0 33.333% 0 0); }
+  66%, 100% { clip-path: inset(0); }
+}
+
 .submission-selection-shine {
   color: #16a34a;
   background-image: linear-gradient(
@@ -29,6 +42,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .leaderboard-connecting-dots {
+    animation: none;
+    clip-path: inset(0);
+  }
   .submission-selection-shine {
     animation: none;
     background-image: none;

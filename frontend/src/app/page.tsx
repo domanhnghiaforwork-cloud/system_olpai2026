@@ -24,7 +24,10 @@ import {
   fetchLeaderboard,
   fetchOverallLeaderboard,
   getAuthToken,
+  getAuthHeaders,
+  API_BASE,
 } from '@/lib/api';
+import { subscribeLeaderboardEvents, type LeaderboardConnectionState } from '@/lib/leaderboardEvents';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 export default function App() {
@@ -42,6 +45,8 @@ export default function App() {
   const [selectedSubmitProblemId, setSelectedSubmitProblemId] = useState<number | null>(null);
   const [selectedLeaderboardCode, setSelectedLeaderboardCode] = useState<string>('CV-01');
   const [leaderboardType, setLeaderboardType] = useState<'overall' | 'overall-private' | 'public' | 'private'>('overall');
+  const connectionKey = `${leaderboardType}:${selectedLeaderboardCode}:${currentUser?.id ?? 0}:${currentUser?.role ?? 'guest'}`;
+  const [leaderboardConnection, setLeaderboardConnection] = useState<{ key: string; state: LeaderboardConnectionState }>({ key: '', state: 'disconnected' });
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState<boolean>(false);
@@ -113,6 +118,80 @@ export default function App() {
     const timer = setTimeout(() => { void loadInitialData(); }, 0);
     return () => clearTimeout(timer);
   }, [loadInitialData]);
+
+  useEffect(() => {
+    if (currentTab !== 'leaderboard' || isLoading) return;
+    const split = leaderboardType === 'private' || leaderboardType === 'overall-private' ? 'private' : 'public';
+    if (split === 'private' && currentUser?.role !== 'admin') return;
+    const token = getAuthToken();
+    let active = true;
+    let stopStream: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let fetching = false;
+    let dirty = false;
+    let fetchController: AbortController | undefined;
+
+    const queueRefresh = (delay = 1000) => {
+      if (!active || document.hidden) return;
+      dirty = true;
+      if (!timer && !fetching) timer = setTimeout(() => { void refresh(); }, delay);
+    };
+    const refresh = async () => {
+      timer = undefined;
+      if (!active || document.hidden) return;
+      dirty = false;
+      fetching = true;
+      fetchController = new AbortController();
+      const signal = fetchController.signal;
+      const request = leaderboardRequest.current;
+      let nextDelay = 1000;
+      try {
+        if (leaderboardType === 'overall' || leaderboardType === 'overall-private') {
+          const items = await fetchOverallLeaderboard(split, signal);
+          if (!active || signal.aborted || getAuthToken() !== token || request !== leaderboardRequest.current) return;
+          if (split === 'private') setPrivateOverallLeaderboard(items);
+          else setOverallLeaderboard(items);
+        } else {
+          const items = await fetchLeaderboard(selectedLeaderboardCode, split, signal);
+          if (!active || signal.aborted || getAuthToken() !== token || request !== leaderboardRequest.current) return;
+          setLeaderboard(items);
+        }
+      } catch {
+        if (!signal.aborted && active) {
+          dirty = true;
+          nextDelay = 5000;
+        }
+      } finally {
+        fetching = false;
+        if (dirty) queueRefresh(nextDelay);
+      }
+    };
+    const syncVisibility = () => {
+      if (document.hidden) {
+        stopStream?.();
+        stopStream = undefined;
+        clearTimeout(timer);
+        timer = undefined;
+        fetchController?.abort();
+        dirty = false;
+      } else if (!stopStream) {
+        stopStream = subscribeLeaderboardEvents(
+          `${API_BASE}/api/leaderboard/events?type=${split}`, getAuthHeaders(), () => queueRefresh(),
+          (state) => { if (active) setLeaderboardConnection({ key: connectionKey, state }); },
+        );
+        queueRefresh(0);
+      }
+    };
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => {
+      active = false;
+      stopStream?.();
+      clearTimeout(timer);
+      fetchController?.abort();
+      document.removeEventListener('visibilitychange', syncVisibility);
+    };
+  }, [currentTab, isLoading, leaderboardType, selectedLeaderboardCode, currentUser?.id, currentUser?.role, connectionKey]);
 
   // Update leaderboard when problem code or type changes
   const handleLeaderboardChange = async (
@@ -348,6 +427,7 @@ export default function App() {
                 onChangeLeaderboardType={handleLeaderboardTypeChange}
                 onRefresh={() => handleLeaderboardChange(selectedLeaderboardCode, leaderboardType)}
                 isLoading={isLeaderboardLoading}
+                isRealtimeConnected={leaderboardConnection.key === connectionKey && leaderboardConnection.state === 'connected'}
               />
             )}
 

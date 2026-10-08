@@ -130,6 +130,13 @@ Truy cập trình duyệt tại địa chỉ: [http://localhost:3000](http://loc
 
 ## Notebook huấn luyện Public / Private
 
+Bảng xếp hạng tự cập nhật qua `GET /api/leaderboard/events` (SSE). Sau khi worker
+lưu điểm hợp lệ, bộ đếm Public hoặc Private trong database tăng cùng transaction;
+API kiểm tra bộ đếm mỗi 2 giây và gửi thông báo, giao diện gộp cập nhật trong 1 giây.
+Kết nối chỉ mở khi đang xem BXH và cửa sổ đang hiển thị; tự nối lại và tải dữ liệu mới
+khi quay về. Thông báo chỉ chứa phiên bản, không chứa điểm; kênh Private và API
+đọc điểm Private đều yêu cầu admin. Nginx gateway tắt buffering cho API để truyền SSE.
+
 Điểm trên **Bảng xếp hạng** và **Nộp bài** hiển thị theo thang 100, lấy hai chữ
 số thập phân (ví dụ mAP `0.9315` thành `93,15`; SacreBLEU `79.5123` thành `79,51`).
 Điểm gốc trong database và bộ chấm không đổi. Bảng tổng hợp cộng điểm Public

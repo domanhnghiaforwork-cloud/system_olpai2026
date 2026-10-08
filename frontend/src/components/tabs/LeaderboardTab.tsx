@@ -21,6 +21,7 @@ interface LeaderboardTabProps {
   onChangeLeaderboardType: (type: 'overall' | 'overall-private' | 'public' | 'private') => void;
   onRefresh: () => void;
   isLoading: boolean;
+  isRealtimeConnected: boolean;
 }
 
 export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
@@ -34,6 +35,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
   onChangeLeaderboardType,
   onRefresh,
   isLoading,
+  isRealtimeConnected,
 }) => {
   const currentProblem = problems.find((p) => p.code === selectedProblemCode) || problems[0];
   const isAdmin = currentUser?.role === 'admin';
@@ -71,6 +73,14 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
         {/* Refresh Button */}
         <div className="flex items-center gap-3 self-start md:self-auto">
+          <span
+            role="status"
+            aria-live="polite"
+            aria-label={isRealtimeConnected ? 'Đã kết nối cập nhật thời gian thực' : 'Đang kết nối cập nhật thời gian thực'}
+            className={`whitespace-nowrap text-[11px] font-semibold ${isRealtimeConnected ? 'text-green-600' : 'text-red-600'}`}
+          >
+            Real time{!isRealtimeConnected && <span className="leaderboard-connecting-dots" aria-hidden="true">...</span>}
+          </span>
           <button
             onClick={onRefresh}
             disabled={isLoading}
