@@ -128,7 +128,7 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
     def validate(self, filepath: str, submission_type: str, original_filename: str = "") -> EvaluationValidationResult:
         """
         Kiểm tra toàn diện chuẩn đầu vào cho tập nộp bài:
-        1. Định dạng file (.csv) và kiểm tra tên file nộp (không có dấu cách, dấu lạ, đúng chuẩn)
+        1. Định dạng file (.csv), không giới hạn tên file nộp
         2. Kích thước và sự tồn tại của file
         3. Cấu trúc cột header: đúng 601 cột ('image_id', 'hoi_000' ... 'hoi_599')
         4. Từng tên file ảnh trong cột image_id:
@@ -148,7 +148,6 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
         path = Path(filepath)
         split_key = "private" if "private" in submission_type.lower() else "public"
         split_info = SPLITS_FILES[split_key]
-        expected_filename = split_info["submit_filename"]
         expected_rows = split_info["expected_rows"]
 
         # 1. Kiểm tra sự tồn tại của file
@@ -166,34 +165,6 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
                 message=f"Định dạng tệp không hợp lệ: '{path.name}'. Hệ thống chỉ chấp nhận tệp có phần mở rộng .csv",
                 errors=["Tệp không phải định dạng .csv"]
             )
-
-        # 3. Kiểm tra tên file tải lên (original_filename)
-        if original_filename:
-            raw_name = Path(original_filename).name
-            # Kiểm tra khoảng trắng trong tên file
-            if " " in raw_name:
-                return EvaluationValidationResult(
-                    is_valid=False,
-                    message=f"Tên file tải lên '{raw_name}' chứa dấu cách (khoảng trắng). Vui lòng đặt tên chuẩn không có dấu cách: '{expected_filename}'.",
-                    errors=["Tên file chứa dấu cách"]
-                )
-            # Kiểm tra ký tự lạ trong tên file
-            if not re.match(r"^[A-Za-z0-9_\-\.]+$", raw_name):
-                return EvaluationValidationResult(
-                    is_valid=False,
-                    message=f"Tên file tải lên '{raw_name}' chứa ký tự đặc biệt hoặc dấu tiếng Việt không hợp lệ.",
-                    errors=["Tên file chứa ký tự lạ"]
-                )
-            # Khuyến nghị hoặc kiểm tra tên file đúng tập public/private
-            if raw_name.lower() != expected_filename.lower():
-                return EvaluationValidationResult(
-                    is_valid=False,
-                    message=(
-                        f"Tên file nộp cho tập {split_key.upper()} phải là '{expected_filename}'. "
-                        f"Tên file hiện tại bạn tải lên là '{raw_name}'. Vui lòng đổi đúng tên file để tránh nộp nhầm tập dữ liệu."
-                    ),
-                    errors=[f"Tên file không đúng chuẩn '{expected_filename}'"]
-                )
 
         # 4. Kiểm tra kích thước file
         file_size = path.stat().st_size
@@ -424,7 +395,7 @@ class Eval1CvHicoEvaluator(BaseEvaluator):
                 "split": split_key,
                 "rows": actual_rows,
                 "classes": len(CLASS_COLUMNS),
-                "filename": expected_filename
+                "filename": original_filename or path.name
             }
         )
 

@@ -6,6 +6,8 @@ API `GET /api/problems/evaluators` trả về danh sách để chọn trong giao
 ## `eval_1_cv_hico`
 
 Chấm CV HICO bằng mAP 600 classes. Đáp án ở `labels_eval_1/`.
+Tên file CSV tự do, chấp nhận khoảng trắng và dấu tiếng Việt. Tập Public/Private
+được xác định theo lựa chọn khi nộp; vẫn kiểm tra header, image_id và xác suất.
 
 ## `eval_2_nlp_tung`
 
@@ -30,7 +32,7 @@ Mặc định dùng đáp án đóng gói trong `labels_eval_2/`.
 ### Logic giữ nguyên
 
 - Nội dung CSV UTF-8 (chấp nhận BOM), tối đa 20 MiB, đúng hai cột theo thứ tự
-  `id,van_ban_chuan`. Không thêm quy tắc tên file của HICO vào NLP.
+  `id,van_ban_chuan`. Tên file CSV tự do.
 - `public` chấm `pub_`, `private` chấm `prv_`; adapter hỗ trợ cả `all` khi gọi
   trực tiếp. Bắt buộc đủ ID của phase trong đáp án. Có thể nộp chung hai tập.
 - Header và ID được strip; khoảng trắng trong dự đoán được gộp bằng

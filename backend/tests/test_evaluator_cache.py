@@ -58,6 +58,26 @@ class EvaluatorCacheTest(unittest.TestCase):
         self.write(self.prediction, [1.1, .1])
         self.assertFalse(self.evaluator.validate(str(self.prediction), 'public', 'public_submit.csv').is_valid)
 
+    def test_cv_accepts_arbitrary_upload_names_for_both_splits(self):
+        with patch.dict(SPLITS_FILES, {'private': {**SPLITS_FILES['private'], 'expected_rows': 2}}):
+            for split in ('public', 'private'):
+                for name in ('model_v2.csv', 'dự đoán đội 01 (bản cuối).CSV', 'public_submit.csv'):
+                    with self.subTest(split=split, filename=name):
+                        uploaded = Path(self.temp.name) / name
+                        uploaded.write_bytes(self.prediction.read_bytes())
+                        result = self.evaluator.validate(str(uploaded), split, name)
+                        self.assertTrue(result.is_valid, result.message)
+                        self.assertEqual(result.details['filename'], name)
+                        self.assertEqual(self.evaluator.evaluate(str(uploaded), split).score, 1.0)
+
+    def test_arbitrary_name_does_not_bypass_csv_validation(self):
+        name = 'dự đoán đội 01.csv'
+        self.write(self.prediction, [1.1, .1])
+        self.assertFalse(self.evaluator.validate(str(self.prediction), 'public', name).is_valid)
+        non_csv = Path(self.temp.name) / 'prediction.txt'
+        non_csv.write_bytes(self.prediction.read_bytes())
+        self.assertFalse(self.evaluator.validate(str(non_csv), 'public', name).is_valid)
+
 
 if __name__ == '__main__':
     unittest.main()
