@@ -486,9 +486,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
   const filesAvailableCount = filteredSubmissions.filter(s => s.file_exists).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
       {/* Admin Header */}
-      <div className="pb-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="pb-2 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold mb-2">
             <ShieldCheck className="w-4 h-4" />

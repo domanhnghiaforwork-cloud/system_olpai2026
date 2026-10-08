@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { loadChatbotRuntimeConfig } from '@/lib/chatbotSession';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
@@ -36,20 +36,25 @@ export default function App() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
   const [overallLeaderboard, setOverallLeaderboard] = useState<OverallLeaderboardItem[]>([]);
+  const [privateOverallLeaderboard, setPrivateOverallLeaderboard] = useState<OverallLeaderboardItem[]>([]);
+  const leaderboardRequest = useRef(0);
 
   const [selectedSubmitProblemId, setSelectedSubmitProblemId] = useState<number | null>(null);
   const [selectedLeaderboardCode, setSelectedLeaderboardCode] = useState<string>('CV-01');
-  const [leaderboardType, setLeaderboardType] = useState<'overall' | 'public' | 'private'>('overall');
+  const [leaderboardType, setLeaderboardType] = useState<'overall' | 'overall-private' | 'public' | 'private'>('overall');
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const clearUserData = useCallback(() => {
+    leaderboardRequest.current += 1;
+    setIsLeaderboardLoading(false);
     setSubmissions([]);
     setUsers([]);
     setLeaderboard([]);
     setOverallLeaderboard([]);
+    setPrivateOverallLeaderboard([]);
   }, []);
 
   // Initial load
@@ -63,7 +68,7 @@ export default function App() {
       if (getAuthToken() !== token && getAuthToken() !== null) return;
       token = getAuthToken();
       clearUserData();
-      if (uRes?.role !== 'admin') setLeaderboardType((previous) => previous === 'private' ? 'public' : previous);
+      setLeaderboardType('overall');
       setCurrentUser(uRes);
       const [probResult, dataResult, subResult, usersResult] = await Promise.allSettled([
         fetchProblems(), fetchDatasets(),
@@ -112,38 +117,46 @@ export default function App() {
   // Update leaderboard when problem code or type changes
   const handleLeaderboardChange = async (
     code: string, 
-    type: 'overall' | 'public' | 'private' = leaderboardType
+    type: 'overall' | 'overall-private' | 'public' | 'private' = leaderboardType
   ) => {
+    if ((type === 'private' || type === 'overall-private') && currentUser?.role !== 'admin') return;
     const token = getAuthToken();
+    const request = ++leaderboardRequest.current;
     try {
       setSelectedLeaderboardCode(code);
       setLeaderboardType(type);
       setIsLeaderboardLoading(true);
 
-      if (type === 'overall') {
-        const overall = await fetchOverallLeaderboard();
-        if (getAuthToken() !== token) return;
-        setOverallLeaderboard(overall);
+      if (type === 'overall' || type === 'overall-private') {
+        const overall = await fetchOverallLeaderboard(type === 'overall-private' ? 'private' : 'public');
+        if (getAuthToken() !== token || request !== leaderboardRequest.current) return;
+        if (type === 'overall-private') setPrivateOverallLeaderboard(overall);
+        else setOverallLeaderboard(overall);
       } else {
         const lb = await fetchLeaderboard(code, type);
-        if (getAuthToken() !== token) return;
+        if (getAuthToken() !== token || request !== leaderboardRequest.current) return;
         setLeaderboard(lb);
       }
     } catch (err: unknown) {
-      if (getAuthToken() !== token) return;
+      if (getAuthToken() !== token || request !== leaderboardRequest.current) return;
       console.error(err);
+      setErrorMsg('Không thể tải bảng xếp hạng. Vui lòng bấm Làm mới để thử lại.');
+      if (type === 'overall-private') {
+        setPrivateOverallLeaderboard([]);
+        setLeaderboardType('overall');
+      }
       if (type === 'private') {
         setLeaderboardType('public');
         const fallbackLb = await fetchLeaderboard(code, 'public').catch(() => []);
-        if (getAuthToken() !== token) return;
+        if (getAuthToken() !== token || request !== leaderboardRequest.current) return;
         setLeaderboard(fallbackLb);
       }
     } finally {
-      setIsLeaderboardLoading(false);
+      if (request === leaderboardRequest.current) setIsLeaderboardLoading(false);
     }
   };
 
-  const handleLeaderboardTypeChange = (type: 'overall' | 'public' | 'private') => {
+  const handleLeaderboardTypeChange = (type: 'overall' | 'overall-private' | 'public' | 'private') => {
     handleLeaderboardChange(selectedLeaderboardCode, type);
   };
 
@@ -151,11 +164,16 @@ export default function App() {
     const token = getAuthToken();
     setCurrentUser(user);
     clearUserData();
-    const nextType = user.role === 'admin' && leaderboardType === 'private'
-      ? 'private' : leaderboardType === 'overall' ? 'overall' : 'public';
+    const nextType = user.role === 'admin' ? leaderboardType
+      : leaderboardType === 'overall-private' ? 'overall' : leaderboardType === 'private' ? 'public' : leaderboardType;
     setLeaderboardType(nextType);
-    const fetchLb = nextType === 'overall'
-      ? fetchOverallLeaderboard().then((value) => { if (getAuthToken() === token) setOverallLeaderboard(value); })
+    const fetchLb = nextType === 'overall' || nextType === 'overall-private'
+      ? fetchOverallLeaderboard(nextType === 'overall-private' ? 'private' : 'public').then((value) => {
+        if (getAuthToken() === token) {
+          if (nextType === 'overall-private') setPrivateOverallLeaderboard(value);
+          else setOverallLeaderboard(value);
+        }
+      })
       : fetchLeaderboard(selectedLeaderboardCode, nextType).then((value) => { if (getAuthToken() === token) setLeaderboard(value); });
     const [subs, lb, allUsers] = await Promise.allSettled([
       fetchSubmissions(), fetchLb, user.role === 'admin' ? fetchUsers() : Promise.resolve([]),
@@ -178,7 +196,7 @@ export default function App() {
     const pending = logoutUser();
     setCurrentUser(null);
     clearUserData();
-    const nextType = leaderboardType === 'private' ? 'public' : leaderboardType;
+    const nextType = leaderboardType === 'overall-private' ? 'overall' : leaderboardType === 'private' ? 'public' : leaderboardType;
     setLeaderboardType(nextType);
     await pending;
     if (getAuthToken()) return;
@@ -202,15 +220,17 @@ export default function App() {
     if (!token) return;
     const lbType = currentUser?.role === 'admin' && leaderboardType === 'private' ? 'private' : 'public';
     try {
+    const overallSplit = currentUser?.role === 'admin' && leaderboardType === 'overall-private' ? 'private' : 'public';
     const [subs, lb, overall] = await Promise.all([
       fetchSubmissions(),
       fetchLeaderboard(selectedLeaderboardCode, lbType).catch(() => []),
-      fetchOverallLeaderboard().catch(() => []),
+      fetchOverallLeaderboard(overallSplit).catch(() => []),
     ]);
     if (getAuthToken() !== token) return;
     setSubmissions(subs);
     setLeaderboard(lb);
-    setOverallLeaderboard(overall);
+    if (overallSplit === 'private') setPrivateOverallLeaderboard(overall);
+    else setOverallLeaderboard(overall);
     } catch {
       if (getAuthToken() === token) setErrorMsg('Bài đã được ghi nhận; chưa tải lại được lịch sử. Vui lòng bấm Thử lại.');
     }
@@ -248,7 +268,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-8">
         {errorMsg && (
           <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -320,9 +340,9 @@ export default function App() {
               <LeaderboardTab
                 problems={problems}
                 leaderboard={leaderboard}
-                overallLeaderboard={overallLeaderboard}
+                overallLeaderboard={leaderboardType === 'overall-private' && currentUser?.role === 'admin' ? privateOverallLeaderboard : overallLeaderboard}
                 selectedProblemCode={selectedLeaderboardCode}
-                onSelectProblemCode={(code) => handleLeaderboardChange(code, leaderboardType === 'overall' ? 'public' : leaderboardType)}
+                onSelectProblemCode={(code) => handleLeaderboardChange(code, leaderboardType === 'overall-private' ? 'private' : leaderboardType === 'overall' ? 'public' : leaderboardType)}
                 currentUser={currentUser}
                 leaderboardType={leaderboardType}
                 onChangeLeaderboardType={handleLeaderboardTypeChange}

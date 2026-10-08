@@ -210,9 +210,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
   });
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-3 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             {/* <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
@@ -220,9 +220,6 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
             </div> */}
             <span>Kho Dữ Liệu Các Đề Thi OLP AI KMA 2026</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Dữ liệu phân theo từng đề bài. Nhấn vào từng khối đề bài để xem danh sách liên kết tải và sao chép link.
-          </p>
         </div>
 
         {/* Search */}
@@ -260,7 +257,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                 {/* Block Header: Tiêu đề tự động lấy tiêu đề của đề bài */}
                 <div
                   onClick={() => !isProbLockedForUser && toggleExpand(prob.id)}
-                  className={`p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 transition-colors select-none ${
+                  className={`min-h-12 px-4 py-2 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-colors select-none ${isExpanded ? 'border-b border-slate-100' : ''} ${
                     isProbLockedForUser
                       ? 'cursor-not-allowed bg-slate-50/70 opacity-90'
                       : 'cursor-pointer bg-gradient-to-r from-slate-50/90 via-white to-slate-50/40 hover:bg-slate-100/50'

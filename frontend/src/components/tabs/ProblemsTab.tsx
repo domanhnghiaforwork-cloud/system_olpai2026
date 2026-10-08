@@ -231,7 +231,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-3 max-w-5xl mx-auto">
       {/* Hidden file input for Admin PDF replacement */}
       <input
         type="file"
@@ -242,7 +242,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
       />
 
       {/* Header with Title and Admin Create Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             {/* <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
@@ -250,27 +250,38 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
             </div> */}
             <span>Danh Sách Đề Bài OLP AI KMA 2026</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Bao gồm 2 bảng đấu: <strong className="text-blue-700">Computer Vision (CV)</strong> và <strong className="text-indigo-700">Natural Language Processing (NLP)</strong>. Nhấn vào từng đề bài để xem nội dung file PDF.
-          </p>
         </div>
 
-        {/* Admin Create Problem Button */}
-        {isAdmin && (
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md shadow-red-600/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tạo thêm đề mới</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {/* Search Input */}
+          <div className="relative self-start sm:self-auto">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm theo mã hoặc tiêu đề..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full sm:w-64 pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden bg-white shadow-xs"
+            />
+          </div>
+  
+          {/* Admin Create Problem Button */}
+          {isAdmin && (
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md shadow-red-600/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tạo thêm đề mới</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Category Tabs (All / CV / NLP) & Search Bar */}
+      {/* Category Tabs (All / CV / NLP) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Category Filter Pills: Only CV and NLP */}
-        <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-2xl w-fit">
+        {/* Category Filter Pills */}
+        <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-100/80 rounded-2xl border border-slate-200/60 w-full">
           <button
             onClick={() => setSelectedCategory('all')}
             className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
@@ -290,7 +301,7 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-blue-300" />
-            <span>Computer Vision (CV)</span>
+            <span>Computer Vision</span>
           </button>
           <button
             onClick={() => setSelectedCategory('NLP')}
@@ -301,21 +312,10 @@ export const ProblemsTab: React.FC<ProblemsTabProps> = ({
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-indigo-300" />
-            <span>NLP (Xử lý ngôn ngữ)</span>
+            <span>Natural Language Processing</span>
           </button>
         </div>
 
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Tìm theo mã hoặc tiêu đề..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full sm:w-64 pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden bg-white shadow-xs"
-          />
-        </div>
       </div>
 
       {/* Vertical List of Long Horizontal Rectangles (Hình chữ nhật dài xếp thành hàng dọc) */}

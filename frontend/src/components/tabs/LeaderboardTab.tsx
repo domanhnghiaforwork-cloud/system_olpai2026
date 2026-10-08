@@ -5,11 +5,8 @@ import { LeaderboardItem, OverallLeaderboardItem, Problem, User } from '@/types'
 import { formatPoints, formatScore } from '@/lib/scoreDisplay';
 import { 
   RefreshCw, 
-  Lock, 
   ShieldCheck, 
   AlertCircle,
-  Info,
-  Layers,
   CheckCircle2
 } from 'lucide-react';
 
@@ -20,8 +17,8 @@ interface LeaderboardTabProps {
   selectedProblemCode: string;
   onSelectProblemCode: (code: string) => void;
   currentUser: User | null;
-  leaderboardType: 'overall' | 'public' | 'private';
-  onChangeLeaderboardType: (type: 'overall' | 'public' | 'private') => void;
+  leaderboardType: 'overall' | 'overall-private' | 'public' | 'private';
+  onChangeLeaderboardType: (type: 'overall' | 'overall-private' | 'public' | 'private') => void;
   onRefresh: () => void;
   isLoading: boolean;
 }
@@ -40,10 +37,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 }) => {
   const currentProblem = problems.find((p) => p.code === selectedProblemCode) || problems[0];
   const isAdmin = currentUser?.role === 'admin';
+  const isOverall = leaderboardType === 'overall' || leaderboardType === 'overall-private';
+  const isPrivate = leaderboardType === 'private' || leaderboardType === 'overall-private';
+  const splitLabel = isPrivate ? 'Private' : 'Public';
   const [showAdminNotice, setShowAdminNotice] = useState(false);
 
-  const handleTabClick = (type: 'overall' | 'public' | 'private') => {
-    if (type === 'private' && !isAdmin) {
+  const handleTabClick = (type: 'overall' | 'overall-private' | 'public' | 'private') => {
+    if ((type === 'private' || type === 'overall-private') && !isAdmin) {
       setShowAdminNotice(true);
       return;
     }
@@ -52,78 +52,31 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-3 max-w-5xl mx-auto">
       {/* Header and Filter */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Bảng Xếp Hạng OLP AI KMA 2026
             </h2>
-            {leaderboardType === 'private' ? (
+            {isPrivate ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
                 <ShieldCheck className="w-3 h-3 text-purple-600" />
                 <span>PRIVATE • ADMIN ONLY</span>
               </span>
             ) : null}
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {leaderboardType === 'overall' ? (
-              <span>
-                Tổng điểm Public cao nhất của <strong>{problems.length} đề thi</strong>, mỗi đề tối đa <strong>100 điểm</strong> • Cập nhật tự động
-              </span>
-            ) : (
-              <span>
-                Đang xem đề: <strong className="text-blue-700">{currentProblem?.code}</strong> ({currentProblem?.title}) • Độ đo: <strong className="text-blue-700">{currentProblem?.metric || 'F1-Score'}</strong>
-              </span>
-            )}
-          </p>
         </div>
 
-        {/* Problem Selector & Refresh Button */}
+        {/* Refresh Button */}
         <div className="flex items-center gap-3 self-start md:self-auto">
-          {leaderboardType === 'overall' ? (
-            <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
-              <span className="px-2.5 py-1 text-xs font-bold text-slate-600">
-                Đề thi ({problems.length}):
-              </span>
-              {problems.map((prob) => (
-                <button
-                  key={prob.id}
-                  onClick={() => {
-                    onSelectProblemCode(prob.code);
-                    onChangeLeaderboardType('public');
-                  }}
-                  title={`Xem bảng xếp hạng chi tiết đề ${prob.code} (${prob.title})`}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white/90 hover:bg-blue-600 hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs"
-                >
-                  {prob.code}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
-              {problems.map((prob) => (
-                <button
-                  key={prob.id}
-                  onClick={() => onSelectProblemCode(prob.code)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    selectedProblemCode === prob.code
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {prob.code}
-                </button>
-              ))}
-            </div>
-          )}
-
           <button
             onClick={onRefresh}
             disabled={isLoading}
             className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all cursor-pointer shadow-xs disabled:opacity-50"
             title="Làm mới bảng xếp hạng"
+            aria-label="Làm mới bảng xếp hạng"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
@@ -137,106 +90,118 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
           <button
             type="button"
             onClick={() => handleTabClick('overall')}
-            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            aria-pressed={leaderboardType === 'overall'}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
               leaderboardType === 'overall'
                 ? 'bg-amber-500 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
-            <span>Bảng Xếp Hạng Tổng</span>
+            <span>Tổng điểm public</span>
           </button>
 
           {/* Public Leaderboard Button */}
           <button
             type="button"
             onClick={() => handleTabClick('public')}
-            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            aria-pressed={leaderboardType === 'public'}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
               leaderboardType === 'public'
                 ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
-            <span>Public</span>
+            <span>Điểm public từng đề</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleTabClick('overall-private')}
+              aria-pressed={leaderboardType === 'overall-private'}
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                leaderboardType === 'overall-private' ? 'bg-purple-700 text-white shadow-xs' : 'text-purple-700 hover:bg-purple-50/80'
+              }`}
+            >
+              <span>Tổng điểm private</span>
+              <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 text-[9px] font-black">ADMIN</span>
+            </button>
+          )}
 
           {/* Private Leaderboard Button */}
-          <button
-            type="button"
-            onClick={() => handleTabClick('private')}
-            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-              leaderboardType === 'private'
-                ? 'bg-purple-700 text-white shadow-xs'
-                : isAdmin
-                ? 'text-purple-700 hover:bg-purple-50/80'
-                : 'text-slate-400 hover:bg-slate-200/50'
-            }`}
-            title={isAdmin ? 'Xem bảng xếp hạng Private' : 'Bảng xếp hạng Private chỉ hiển thị cho tài khoản Quản trị viên (Admin)'}
-          >
-            {isAdmin ? (
-              <ShieldCheck className={`w-4 h-4 ${leaderboardType === 'private' ? 'text-white' : 'text-purple-600'}`} />
-            ) : (
-              <Lock className="w-4 h-4 text-slate-400" />
-            )}
-            <span>Private</span>
-            <span className={`px-1.5 py-0.2 text-[9px] font-black rounded uppercase tracking-wider ${
-              leaderboardType === 'private'
-                ? 'bg-purple-800 text-purple-200'
-                : isAdmin
-                ? 'bg-purple-100 text-purple-700'
-                : 'bg-slate-200 text-slate-500'
-            }`}>
-              Admin
-            </span>
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleTabClick('private')}
+              aria-pressed={leaderboardType === 'private'}
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                leaderboardType === 'private'
+                  ? 'bg-purple-700 text-white shadow-xs'
+                  : 'text-purple-700 hover:bg-purple-50/80'
+              }`}
+              title="Xem bảng xếp hạng Private"
+            >
+              <span>Điểm private từng đề</span>
+              <span className={`px-1.5 py-0.2 text-[9px] font-black rounded uppercase tracking-wider ${
+                leaderboardType === 'private'
+                  ? 'bg-purple-800 text-purple-200'
+                  : 'bg-purple-100 text-purple-700'
+              }`}>
+                Admin
+              </span>
+            </button>
+          )}
         </div>
 
-        <div className="text-xs text-slate-500 font-medium px-2 flex items-center gap-1.5">
-          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span className="truncate">
-            {leaderboardType === 'overall'
-              ? `Tổng điểm Public • Tối đa ${problems.length * 100} điểm`
-              : leaderboardType === 'public'
-              ? 'Xếp hạng dựa trên kết quả chạy tập kiểm thử Public Test'
-              : 'Xếp hạng bảo mật đánh giá kết quả tập Private Test (Chung cuộc)'}
-          </span>
-        </div>
       </div>
 
-      {/* Admin Notice Banner when viewing Private Leaderboard */}
-      {leaderboardType === 'private' && isAdmin && (
-        <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-purple-900 text-xs flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-bold text-sm text-purple-950 flex items-center gap-2">
-              <span>Chế độ Quản trị viên: Đang xem Bảng Xếp Hạng Private (Chung cuộc)</span>
-              <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 text-[10px] font-bold">
-                Bảo mật
-              </span>
-            </div>
-            <p className="mt-1 text-purple-700">
-              Bảng xếp hạng này được tính dựa trên bài nộp của thí sinh vào tập <strong>Private Test</strong>. Dữ liệu này được ẩn hoàn toàn và không hiển thị cho các tài khoản thí sinh thông thường.
-            </p>
-          </div>
+      {!isOverall && (!isPrivate || isAdmin) && (
+        <div className="flex flex-wrap items-center justify-start gap-2" role="group" aria-label="Chọn đề thi">
+          {([
+            { category: 'CV', label: 'Computer Vision' },
+            { category: 'NLP', label: 'Natural Language Processing' },
+          ] as const).map(({ category, label }) => {
+            const problem = currentProblem?.category === category
+              ? currentProblem
+              : problems.find((item) => item.category === category);
+            const isSelected = currentProblem?.category === category;
+
+            return (
+              <button
+                key={category}
+                type="button"
+                aria-pressed={isSelected}
+                disabled={!problem}
+                onClick={() => { if (problem) onSelectProblemCode(problem.code); }}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isSelected
+                    ? 'bg-green-600 border-green-600 text-white shadow-xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-green-50 hover:border-green-300 hover:text-green-700'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       )}
 
       {/* OVERALL LEADERBOARD TABLE */}
-      {leaderboardType === 'overall' ? (
-        <div className="bg-white rounded-3xl border border-amber-200/80 shadow-xs overflow-hidden">
+      {isPrivate && !isAdmin ? (
+        <p role="alert" className="p-6 text-center text-slate-500">Bảng xếp hạng Private chỉ dành cho Admin.</p>
+      ) : isOverall ? (
+        <div className={`bg-white rounded-3xl border shadow-xs overflow-hidden ${isPrivate ? 'border-purple-200' : 'border-amber-200/80'}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b text-xs font-bold uppercase tracking-wider bg-amber-50/50 border-amber-100 text-amber-900">
+              <thead className={`border-b text-xs font-bold uppercase tracking-wider ${isPrivate ? 'bg-purple-50/60 border-purple-100 text-purple-800' : 'bg-amber-50/50 border-amber-100 text-amber-900'}`}>
                 <tr>
                   <th className="py-4 px-6 text-center w-20">Hạng</th>
-                  <th className="py-4 px-6">Đội thi / Thí sinh</th>
-                  <th className="py-4 px-6 text-center w-36">Tiến độ bài thi</th>
+                  <th className="py-4 px-6">Đội thi</th>
+                  <th className="py-4 px-6 text-center w-36">Bài thi</th>
                   <th className="py-4 px-6 text-right min-w-[260px]">
-                    <div>Tổng điểm Public (tối đa {problems.length * 100})</div>
-                    <span className="block text-[10px] font-semibold text-amber-700 lowercase">
-                      (kèm điểm thành phần từng đề)
-                    </span>
+                    Tổng điểm {splitLabel}
                   </th>
-                  <th className="py-4 px-6 text-right w-44">Lần nộp cuối</th>
+                  <th className="py-4 px-6 text-right w-44">Thời gian</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -250,7 +215,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 ) : overallLeaderboard.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-slate-400 text-xs sm:text-sm">
-                      Chưa có bài nộp hợp lệ nào trong toàn bộ hệ thống các đề thi.
+                      Chưa có bài nộp {splitLabel} hợp lệ trong các đề thi.
                     </td>
                   </tr>
                 ) : (
@@ -367,15 +332,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               }`}>
                 <tr>
                   <th className="py-4 px-6 text-center w-20">Hạng</th>
-                  <th className="py-4 px-6">Đội thi / Thí sinh</th>
+                  <th className="py-4 px-6">Đội thi</th>
                   <th className="py-4 px-6">Bài thi</th>
                   <th className="py-4 px-6 text-right">
-                    Điểm cao nhất /100 ({currentProblem?.metric || 'Score'})
-                    {leaderboardType === 'private' && (
-                      <span className="block text-[10px] font-semibold text-purple-600 lowercase">(private test)</span>
-                    )}
+                    Điểm cao nhất
                   </th>
-                  <th className="py-4 px-6 text-right">Thời gian nộp</th>
+                  <th className="py-4 px-6 text-right">Thời gian</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">

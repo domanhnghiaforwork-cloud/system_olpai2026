@@ -386,9 +386,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   };
 
   return (
-    <div className="space-y-10 max-w-5xl mx-auto">
+    <div className="space-y-3 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             {/* <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shadow-xs">
@@ -396,9 +396,6 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             </div> */}
             <span>Cổng Nộp Bài Thi & Chấm Điểm Tự Động OLP AI KMA</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Mỗi loại nộp (Public / Private) có giới hạn nộp riêng biệt. Khi hết lượt hoặc chưa đến giờ mở, khu vực nộp bài sẽ tự động khóa.
-          </p>
         </div>
 
         {/* Admin Action: Chỉnh sửa số lần nộp & Khóa Private */}

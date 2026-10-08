@@ -28,7 +28,6 @@ def best_submission_rows(db, problem_ids, submission_type):
             partition_by=(Submission.user_id, Submission.problem_id),
             order_by=submission_order_by(),
         ).label("position"),
-        func.max(Submission.created_at).over(partition_by=Submission.user_id).label("last_time"),
         func.count(Submission.id).over(partition_by=(Submission.user_id, Submission.problem_id)).label("total_submissions"),
     ).join(Problem, Problem.id == Submission.problem_id).outerjoin(
         SubmissionJob, SubmissionJob.submission_id == Submission.id
@@ -40,11 +39,17 @@ def best_submission_rows(db, problem_ids, submission_type):
 
 
 @router.get("/overall", response_model=List[OverallLeaderboardItem])
-def get_overall_leaderboard(db: Session = Depends(get_db)):
+def get_overall_leaderboard(
+    type: str = Query("public", pattern="^(public|private)$"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    if type == "private" and (not current_user or current_user.role != "admin"):
+        raise HTTPException(403, "Bảng xếp hạng tổng Private chỉ dành cho Quản trị viên (Admin).")
     problems = db.query(Problem).order_by(Problem.id.asc()).all()
     if not problems:
         return []
-    rows = best_submission_rows(db, [p.id for p in problems], "public")
+    rows = best_submission_rows(db, [p.id for p in problems], type)
     users = {u.id: u for u in db.query(User).filter(User.id.in_({r["user_id"] for r in rows})).all()}
     grouped = {}
     for row in rows:
@@ -71,7 +76,9 @@ def get_overall_leaderboard(db: Session = Depends(get_db)):
             team_name=(user.team_name or user.username) if user else "Đội thi",
             username=user.username if user else None, total_score=round(total, 4),
             total_problems_submitted=len(scores), total_problems_count=len(problems),
-            components=components, last_submission_time=next(iter(scores.values()))["last_time"],
+            # Time when the selected best scores forming this total were achieved.
+            components=components,
+            last_submission_time=max(row["created_at"] for row in scores.values()),
         ))
     items.sort(key=lambda item: (-item.total_score, -item.total_problems_submitted,
                                item.last_submission_time or datetime.datetime.max))
@@ -100,7 +107,7 @@ def get_leaderboard(
         rows.sort(key=lambda row: (-row["score"], row["rank_cer"], -row["rank_exact_match"],
                                    row["created_at"], row["submission_id"]))
     else:
-        rows.sort(key=lambda row: (-row["score"], row["last_time"]))
+        rows.sort(key=lambda row: (-row["score"], row["created_at"], row["submission_id"]))
     items = []
     for rank, row in enumerate(rows, 1):
         user = users.get(row["user_id"])
@@ -109,7 +116,7 @@ def get_leaderboard(
             full_name=user.full_name if user else "User",
             team_name=(user.team_name or user.username) if user else "Team",
             problem_code=problem.code, best_score=row["score"],
-            total_submissions=row["total_submissions"], last_submission_time=row["last_time"],
+            total_submissions=row["total_submissions"], last_submission_time=row["created_at"],
             submission_type=split,
         ))
     return items

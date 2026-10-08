@@ -408,8 +408,8 @@ export async function fetchLeaderboard(
   return res.json();
 }
 
-export async function fetchOverallLeaderboard(): Promise<OverallLeaderboardItem[]> {
-  const url = `${API_BASE}/api/leaderboard/overall`;
+export async function fetchOverallLeaderboard(type: 'public' | 'private' = 'public'): Promise<OverallLeaderboardItem[]> {
+  const url = `${API_BASE}/api/leaderboard/overall?type=${type}`;
   const res = await fetch(url, { 
     cache: 'no-store',
     headers: getAuthHeaders(),

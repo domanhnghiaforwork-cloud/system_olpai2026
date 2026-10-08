@@ -224,10 +224,12 @@ class SubmissionQueueTest(unittest.TestCase):
             db.add_all([first,
                 Submission(user_id=self.ids[0], problem_id=problem.id, filename='public_submit.csv',
                            status='SUCCESS', submission_type='public', score=.8, created_at=when + datetime.timedelta(days=2)),
+                Submission(user_id=self.ids[0], problem_id=problem.id, filename='public_submit.csv',
+                           status='SUCCESS', submission_type='public', score=.7, created_at=when + datetime.timedelta(days=3)),
                 Submission(user_id=self.ids[1], problem_id=problem.id, filename='public_submit.csv',
                            status='SUCCESS', submission_type='public', score=.8, created_at=when + datetime.timedelta(days=1)),
                 Submission(user_id=self.ids[0], problem_id=second.id, filename='public_submit.csv',
-                           status='SUCCESS', submission_type='public', score=.2, created_at=when),
+                           status='SUCCESS', submission_type='public', score=.2, created_at=when + datetime.timedelta(hours=12)),
                 Submission(user_id=self.ids[0], problem_id=problem.id, filename='private_submit.csv',
                            status='SUCCESS', submission_type='private', score=.95, created_at=when),
                 Submission(user_id=self.ids[0], problem_id=problem.id, filename='public_submit.csv',
@@ -240,14 +242,22 @@ class SubmissionQueueTest(unittest.TestCase):
         self.assertEqual(overall[0]['total_score'], 100.0)
         best = next(p for p in overall[0]['components'] if p['problem_id'] == self.problem_id)
         self.assertEqual(best['submission_id'], earliest_id)
+        self.assertEqual(datetime.datetime.fromisoformat(overall[0]['last_submission_time']),
+                         when + datetime.timedelta(hours=12))
         public = self.client.get('/api/leaderboard', params={'problem_code': code}).json()
-        self.assertEqual(public[0]['user_id'], self.ids[1])
-        self.assertEqual(public[1]['total_submissions'], 2)
-        self.assertEqual(public[1]['best_score'], .8)
+        self.assertEqual(public[0]['user_id'], self.ids[0])
+        self.assertEqual(public[0]['total_submissions'], 3)
+        self.assertEqual(public[0]['best_score'], .8)
+        self.assertEqual(datetime.datetime.fromisoformat(public[0]['last_submission_time']), when)
         self.assertEqual(self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'},
                                         headers=self.headers[0]).status_code, 403)
         private = self.client.get('/api/leaderboard', params={'problem_code': code, 'type': 'private'}, headers=self.headers[2]).json()
         self.assertEqual(private[0]['best_score'], .95)
+        self.assertEqual(datetime.datetime.fromisoformat(private[0]['last_submission_time']), when)
+        private_overall = self.client.get('/api/leaderboard/overall', params={'type': 'private'},
+                                          headers=self.headers[2]).json()
+        self.assertEqual(private_overall[0]['total_score'], 95.0)
+        self.assertEqual(datetime.datetime.fromisoformat(private_overall[0]['last_submission_time']), when)
 
     def test_overall_leaderboard_adds_normalized_cv_nlp_points_and_ranks_consistently(self):
         with SessionLocal() as db:
