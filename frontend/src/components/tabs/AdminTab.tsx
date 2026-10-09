@@ -5,7 +5,7 @@ import {
   AdminStats, 
   Problem, 
   User, 
-  EvaluatorOption, 
+  AdminRecentSubmission,
   AdminSubmission,
   BatchCreateUserResponse 
 } from '@/types';
@@ -13,11 +13,7 @@ import {
   ShieldCheck, 
   Users, 
   FileCode2, 
-  UploadCloud, 
-  Database, 
-  PlusCircle, 
   Activity, 
-  Cpu, 
   Download, 
   FolderArchive, 
   FileSpreadsheet, 
@@ -34,18 +30,14 @@ import {
   UserPlus,
   Trash2,
   Edit,
-  FileText,
   X,
   Dices,
-  Lock,
   Mail,
-  UserCheck,
   Sparkles,
   Info
 } from 'lucide-react';
 import { 
   fetchAdminOverview, 
-  fetchEvaluators, 
   fetchProblems, 
   fetchUsers, 
   fetchValidSubmissions,
@@ -57,25 +49,22 @@ import {
   updateAdminUser,
   deleteAdminUser,
   resetAdminUserPassword,
-  getUsersExportTxtUrl,
-  createProblem,
-  API_BASE
+  getUsersExportTxtUrl
 } from '@/lib/api';
+import { formatScore } from '@/lib/scoreDisplay';
 
 interface AdminTabProps {
-  onProblemCreated: () => void;
   onUsersUpdated?: () => void;
 }
 
-export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpdated }) => {
+export const AdminTab: React.FC<AdminTabProps> = ({ onUsersUpdated }) => {
   // Navigation section
-  const [activeSection, setActiveSection] = useState<'accounts' | 'submissions' | 'problems'>('accounts');
+  const [activeSection, setActiveSection] = useState<'accounts' | 'submissions' | 'monitoring'>('accounts');
 
   // Overview stats & activity
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [recentSubs, setRecentSubs] = useState<any[]>([]);
+  const [recentSubs, setRecentSubs] = useState<AdminRecentSubmission[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [evaluators, setEvaluators] = useState<EvaluatorOption[]>([]);
 
   // ---------------------------------------------------------------------------
   // Account Management State
@@ -142,16 +131,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
   const [problemsList, setProblemsList] = useState<Problem[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
 
-  // New problem form state
-  const [newCode, setNewCode] = useState('');
-  const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newMetric, setNewMetric] = useState('mAP');
-  const [newCategory, setNewCategory] = useState<'CV' | 'NLP'>('CV');
-  const [newEvalConfig, setNewEvalConfig] = useState('eval_1_cv_hico');
-  const [isCreating, setIsCreating] = useState(false);
-  const [createMsg, setCreateMsg] = useState<string | null>(null);
-
   // ---------------------------------------------------------------------------
   // Load data
   // ---------------------------------------------------------------------------
@@ -204,7 +183,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
   useEffect(() => {
     loadOverview();
     loadAdminUsers();
-    fetchEvaluators().then(setEvaluators).catch(console.error);
     fetchProblems().then(setProblemsList).catch(console.error);
     fetchUsers().then(setUsersList).catch(console.error);
   }, []);
@@ -422,38 +400,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
     );
   });
 
-  // Handle problem creation
-  const handleCreateProblem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCode || !newTitle || !newDesc) return;
-
-    try {
-      setIsCreating(true);
-      const formData = new FormData();
-      formData.append('code', newCode);
-      formData.append('title', newTitle);
-      formData.append('category', newCategory);
-      formData.append('metric', newMetric);
-      formData.append('deadline', '2026-11-30 23:59:59');
-      if (newEvalConfig) {
-        formData.append('evaluation_config', newEvalConfig);
-      }
-
-      await createProblem(formData);
-      setCreateMsg('Đã tạo đề bài mới thành công!');
-      setNewCode('');
-      setNewTitle('');
-      setNewDesc('');
-      onProblemCreated();
-      loadOverview();
-      fetchProblems().then(setProblemsList).catch(console.error);
-    } catch (err: any) {
-      setCreateMsg(err.message || 'Lỗi khi tạo đề bài');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   // Submissions helpers
   const filteredSubmissions = validSubmissions.filter((sub) => {
     if (submissionTypeFilter !== 'all' && sub.submission_type !== submissionTypeFilter) {
@@ -486,70 +432,59 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
   const filesAvailableCount = filteredSubmissions.filter(s => s.file_exists).length;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pr-20 sm:pr-28 xl:pr-48">
       {/* Admin Header */}
       <div className="pb-2 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold mb-2">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Khu vực Quản trị viên (Admin Panel)</span>
-          </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-xl xl:text-2xl font-black text-slate-900 tracking-tight">
             Bảng Quản Trị Hệ Thống OLP AI KMA 2026
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Quản lý tài khoản & mật khẩu đội thi, tải file TXT danh sách, quản lý bài nộp CSV và cấu hình đề thi.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>Hệ thống chấm thi: Sẵn sàng</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold">
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            <span>Khu vực Quản trị viên (Admin Panel)</span>
           </span>
         </div>
       </div>
 
-      {/* Overview Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
+      {/* Fixed statistics rail, independent of page and list scrolling. */}
+      <aside aria-label="Thống kê hệ thống" className="fixed right-0 top-36 z-30 max-h-[calc(100dvh-10rem)] w-16 overflow-y-auto overscroll-contain rounded-l-2xl border border-r-0 border-slate-200 bg-white shadow-sm sm:w-24 lg:top-24 lg:max-h-[calc(100dvh-7rem)] xl:w-44">
+        <dl className="divide-y divide-slate-100">
+          <div className="p-2 xl:p-4">
+            <dt className="text-[9px] font-bold leading-tight text-slate-500 sm:text-[10px] xl:text-xs">
+              Tổng số tài khoản
+            </dt>
+            <dd className="mt-1 text-lg font-black tabular-nums text-slate-900 xl:text-2xl">{stats?.total_users ?? adminUsers.length}</dd>
+            <dd className="mt-1 hidden text-[10px] text-slate-400 xl:block">Gồm thí sinh & ban tổ chức</dd>
           </div>
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Tổng số tài khoản</div>
-          <div className="text-3xl font-black text-slate-900 mt-1">{stats?.total_users ?? adminUsers.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Gồm thí sinh & ban tổ chức</div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-3">
-            <FileCode2 className="w-5 h-5" />
+          <div className="p-2 xl:p-4">
+            <dt className="text-[9px] font-bold leading-tight text-slate-500 sm:text-[10px] xl:text-xs">
+              Đề bài đang mở
+            </dt>
+            <dd className="mt-1 text-lg font-black tabular-nums text-slate-900 xl:text-2xl">{stats?.total_problems ?? '—'}</dd>
+            <dd className="mt-1 hidden text-[10px] text-slate-400 xl:block">Được cập nhật tự động</dd>
           </div>
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Đề bài đang mở</div>
-          <div className="text-3xl font-black text-slate-900 mt-1">{stats?.total_problems ?? '—'}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Được cập nhật tự động</div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-3">
-            <UploadCloud className="w-5 h-5" />
+          <div className="p-2 xl:p-4">
+            <dt className="text-[9px] font-bold leading-tight text-slate-500 sm:text-[10px] xl:text-xs">
+              Bài nộp hợp lệ
+            </dt>
+            <dd className="mt-1 flex flex-wrap items-baseline gap-x-1 text-lg font-black tabular-nums text-slate-900 xl:text-2xl">
+              <span>{stats?.valid_submissions ?? '—'}</span>
+              <span className="text-[10px] font-semibold text-slate-400 xl:text-xs">/ {stats?.total_submissions ?? '—'}</span>
+            </dd>
+            <dd className="mt-1 hidden text-[10px] text-emerald-600 xl:block">Đã kiểm tra & lưu trữ CSV</dd>
           </div>
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Bài nộp hợp lệ</div>
-          <div className="text-3xl font-black text-slate-900 mt-1">
-            {stats?.valid_submissions ?? '—'} <span className="text-sm font-semibold text-slate-400">/ {stats?.total_submissions ?? '—'}</span>
+          <div className="p-2 xl:p-4">
+            <dt className="text-[9px] font-bold leading-tight text-slate-500 sm:text-[10px] xl:text-xs">
+              Tập dữ liệu đề thi
+            </dt>
+            <dd className="mt-1 text-lg font-black tabular-nums text-slate-900 xl:text-2xl">{stats?.total_datasets ?? '—'}</dd>
+            <dd className="mt-1 hidden text-[10px] text-slate-400 xl:block">Train & Public Test</dd>
           </div>
-          <div className="text-[11px] text-emerald-600 font-semibold mt-1">Đã kiểm tra & lưu trữ CSV</div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
-            <Database className="w-5 h-5" />
-          </div>
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Tập dữ liệu đề thi</div>
-          <div className="text-3xl font-black text-slate-900 mt-1">{stats?.total_datasets ?? '—'}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Train & Public Test</div>
-        </div>
-      </div>
+        </dl>
+      </aside>
 
       {/* Sub-navigation Menu for Admin */}
       <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/60 shadow-2xs">
@@ -584,15 +519,15 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
 
         <button
           type="button"
-          onClick={() => setActiveSection('problems')}
+          onClick={() => setActiveSection('monitoring')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeSection === 'problems'
+            activeSection === 'monitoring'
               ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
           }`}
         >
-          <PlusCircle className="w-4 h-4 text-red-600" />
-          <span>Thêm Đề Thi & Giám Sát</span>
+          <Activity className="w-4 h-4 text-blue-600" />
+          <span>Giám Sát Nộp Bài</span>
         </button>
       </div>
 
@@ -748,9 +683,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
           </div>
 
           {/* Accounts Table */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
+          <div role="region" aria-label="Danh sách tài khoản" tabIndex={0} className="max-h-[60vh] overflow-auto overscroll-contain rounded-2xl border border-slate-200 shadow-xs focus-visible:outline-2 focus-visible:outline-blue-500">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-4 w-12 text-center">#STT</th>
                   <th className="py-3 px-4">Tên đăng nhập (Username)</th>
@@ -1125,15 +1060,15 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
           </div>
 
           {/* Submissions Table */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
+          <div role="region" aria-label="Danh sách file bài nộp" tabIndex={0} className="max-h-[60vh] overflow-auto overscroll-contain rounded-2xl border border-slate-200 shadow-xs focus-visible:outline-2 focus-visible:outline-blue-500">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-4 w-14 text-center">#STT</th>
                   <th className="py-3 px-4">Thí sinh / Đội thi</th>
                   <th className="py-3 px-4">Đề bài</th>
                   <th className="py-3 px-4">Vòng thi</th>
-                  <th className="py-3 px-4 text-right">Điểm số</th>
+                  <th className="py-3 px-4 text-right">Điểm / 100</th>
                   <th className="py-3 px-4">Thời gian nộp</th>
                   <th className="py-3 px-4">Trạng thái file</th>
                   <th className="py-3 px-4 text-center">Thao tác</th>
@@ -1178,7 +1113,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-black text-sm text-blue-700">
-                        {sub.score !== null ? Number(sub.score).toFixed(4) : '—'}
+                        {formatScore(sub.score, sub)}
                       </td>
                       <td className="py-3 px-4 text-[11px] text-slate-500 whitespace-nowrap">
                         {sub.created_at ? new Date(sub.created_at).toLocaleString('vi-VN') : '—'}
@@ -1220,134 +1155,19 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION 3: THÊM ĐỀ THI & GIÁM SÁT HỆ THỐNG (PROBLEMS & SYSTEM FEED) */}
+      {/* SECTION 3: GIÁM SÁT NỘP BÀI (SYSTEM FEED) */}
       {/* ========================================================================= */}
-      {activeSection === 'problems' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Form: Add New Problem */}
-          <div className="lg:col-span-6 bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-xs">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-6">
-              <PlusCircle className="w-5 h-5 text-red-600" />
-              <span>Thêm đề bài mới (Khung chức năng Admin)</span>
-            </h3>
-
-            <form onSubmit={handleCreateProblem} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span>Mã đề bài:</span>
-                    <span className="text-red-500 font-bold text-[10px] uppercase tracking-wider">(Bắt buộc)</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="VD: AI-04"
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Phân loại:</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value as 'CV' | 'NLP')}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden bg-white"
-                  >
-                    <option value="CV">Computer Vision (CV)</option>
-                    <option value="NLP">Xử lý ngôn ngữ (NLP)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Tên đề bài:</label>
-                <input
-                  type="text"
-                  placeholder="VD: Phân tích mã độc Ransomware dựa trên hành vi API Call"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Độ đo đánh giá:</label>
-                <input
-                  type="text"
-                  placeholder="VD: mAP, Macro F1-Score, AUC-ROC, Accuracy"
-                  value={newMetric}
-                  onChange={(e) => setNewMetric(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden"
-                  required
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200/80 space-y-1">
-                <label className="block text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Cấu hình đánh giá (Evaluator Module):</span>
-                </label>
-                <select
-                  value={newEvalConfig}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setNewEvalConfig(val);
-                    const found = evaluators.find((ev) => ev.id === val);
-                    if (found) setNewMetric(found.metric);
-                  }}
-                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-indigo-200 bg-white text-slate-800 focus:border-indigo-500 focus:outline-hidden"
-                >
-                  <option value="">-- Chưa cấu hình (Ẩn khỏi nộp bài) --</option>
-                  {evaluators.map((ev) => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.id} — {ev.name} ({ev.metric})
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-indigo-700 font-medium">
-                  Chỉ đề có cấu hình đánh giá mới được đưa vào danh sách chọn nộp bài.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Mô tả chi tiết bài toán:</label>
-                <textarea
-                  rows={3}
-                  placeholder="Nhập yêu cầu bài toán, định dạng file nộp..."
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden"
-                  required
-                />
-              </div>
-
-              {createMsg && (
-                <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
-                  {createMsg}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isCreating}
-                className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-              >
-                {isCreating ? 'Đang tạo...' : 'Tạo đề bài'}
-              </button>
-            </form>
-          </div>
-
+      {activeSection === 'monitoring' && (
+        <div className="space-y-6">
           {/* Live Submissions Feed */}
-          <div className="lg:col-span-6 bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-xs">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-xs">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-6">
               <Activity className="w-5 h-5 text-blue-600" />
               <span>Nhật ký nộp bài gần đây của toàn hệ thống</span>
+              <span className="ml-auto shrink-0 text-xs font-semibold text-slate-500">Điểm / 100</span>
             </h3>
 
-            <div className="space-y-3">
+            <div role="region" aria-label="Nhật ký nộp bài" tabIndex={0} className="max-h-[60vh] overflow-y-auto overscroll-contain space-y-3 pr-2 focus-visible:outline-2 focus-visible:outline-blue-500">
               {recentSubs.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-xs">
                   Chưa có dữ liệu nộp bài
@@ -1372,7 +1192,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({ onProblemCreated, onUsersUpd
 
                     <div className="text-right">
                       <span className="font-mono font-bold text-sm text-red-600">
-                        {item.score !== null ? item.score : '—'}
+                        {formatScore(item.score, item)}
                       </span>
                       <span className="block text-[10px] text-emerald-600 font-semibold">
                         {item.status}

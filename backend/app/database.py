@@ -19,6 +19,7 @@ engine = create_engine(
 @event.listens_for(engine, "connect")
 def configure_sqlite(connection, _record):
     connection.execute("PRAGMA busy_timeout=60000")
+    connection.execute("PRAGMA foreign_keys=ON")
 
 
 # WAL lets readers continue while the API/worker commits a short write.

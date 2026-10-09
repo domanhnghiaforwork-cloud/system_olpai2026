@@ -459,9 +459,6 @@ export default function App() {
 
             {currentTab === 'admin' && (
               <AdminTab
-                onProblemCreated={() => {
-                  fetchProblems().then(setProblems);
-                }}
                 onUsersUpdated={() => {
                   fetchUsers().then(setUsers);
                 }}

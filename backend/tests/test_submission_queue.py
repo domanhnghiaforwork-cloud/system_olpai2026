@@ -8,6 +8,7 @@ import sys
 import tempfile
 import socket
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 import unittest
@@ -24,7 +25,7 @@ from fastapi.testclient import TestClient
 import httpx
 from app.main import app
 from app.database import engine, SessionLocal
-from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User
+from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User, ChatbotProvisionJob, UploadCleanupJob
 from app.auth_utils import create_access_token
 from app.evaluators.base import EvaluationValidationResult, EvaluationScoreResult
 from app.submission_jobs import claim_jobs, evaluate_job, finish_job
@@ -62,6 +63,7 @@ class SubmissionQueueTest(unittest.TestCase):
             pdf_patch.start()
             self.addCleanup(pdf_patch.stop)
         with SessionLocal() as db:
+            db.query(UploadCleanupJob).delete()
             db.query(SubmissionJob).delete()
             db.query(Submission).delete()
             unique = uuid4().hex[:12]
@@ -88,6 +90,176 @@ class SubmissionQueueTest(unittest.TestCase):
         job = claim_jobs(1)[0]
         finish_job(job, evaluate_job(job))
         return job
+
+    def test_delete_account_removes_uploads_jobs_and_updates_both_leaderboards(self):
+        from app.leaderboard_events import read_leaderboard_revision
+
+        self.assertEqual(self.upload().status_code, 202)
+        claimed = claim_jobs(1)[0]
+        self.assertEqual(self.upload(split='private').status_code, 202)
+        self.assertEqual(self.notebook_upload().status_code, 201)
+        self.assertEqual(self.notebook_upload('private').status_code, 201)
+        self.assertEqual(self.upload(headers=self.headers[1]).status_code, 202)
+        self.assertEqual(self.notebook_upload(headers=self.headers[1]).status_code, 201)
+        with SessionLocal() as db:
+            owner_paths = [Path(row.stored_path) for model in (Submission, TrainingNotebook)
+                           for row in db.query(model).filter_by(user_id=self.ids[0]).all()]
+            other_paths = [Path(row.stored_path) for model in (Submission, TrainingNotebook)
+                           for row in db.query(model).filter_by(user_id=self.ids[1]).all()]
+            db.add(ChatbotProvisionJob(user_id=self.ids[0], email='cleanup@example.com',
+                                      role='user', password_hash='test-placeholder'))
+            db.commit()
+        versions = {split: read_leaderboard_revision(split) for split in ('public', 'private')}
+        response = self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(all(not path.exists() for path in owner_paths))
+        self.assertTrue(all(path.is_file() for path in other_paths))
+        with SessionLocal() as db:
+            self.assertIsNone(db.get(User, self.ids[0]))
+            for model in (Submission, SubmissionJob, TrainingNotebook, ChatbotProvisionJob):
+                self.assertEqual(db.query(model).filter_by(user_id=self.ids[0]).count(), 0)
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+            self.assertEqual(db.query(SubmissionJob).filter_by(user_id=self.ids[1]).count(), 1)
+        for split, version in versions.items():
+            self.assertEqual(read_leaderboard_revision(split), version + 1)
+        # A worker already holding the deleted job cannot recreate its result.
+        finish_job(claimed, {'success': True, 'score': .99, 'final_status': 'SUCCESS'})
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Submission).filter_by(user_id=self.ids[0]).count(), 0)
+
+    def test_delete_account_keeps_files_when_database_commit_fails(self):
+        from sqlalchemy.orm import Session
+
+        self.upload()
+        with SessionLocal() as db:
+            path = Path(db.query(Submission).filter_by(user_id=self.ids[0]).one().stored_path)
+        with patch.object(Session, 'commit', side_effect=RuntimeError('commit failed')):
+            with self.assertRaisesRegex(RuntimeError, 'commit failed'):
+                self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2])
+        self.assertTrue(path.is_file())
+        with SessionLocal() as db:
+            self.assertIsNotNone(db.get(User, self.ids[0]))
+            self.assertEqual(db.query(Submission).filter_by(user_id=self.ids[0]).count(), 1)
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+
+    def test_delete_account_retries_file_locked_until_after_database_commit(self):
+        from app.upload_cleanup import cleanup_pending_uploads
+
+        self.upload()
+        with SessionLocal() as db:
+            path = Path(db.query(Submission).filter_by(user_id=self.ids[0]).one().stored_path)
+        with patch.object(Path, 'unlink', side_effect=PermissionError('file locked')):
+            response = self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(path.exists())
+        with SessionLocal() as db:
+            self.assertIsNone(db.get(User, self.ids[0]))
+            job = db.query(UploadCleanupJob).one()
+            job.next_attempt_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
+            db.commit()
+        cleanup_pending_uploads()
+        self.assertFalse(path.exists())
+        with SessionLocal() as db:
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+
+    def test_background_cleanup_runs_without_chatbot_sync(self):
+        from app import upload_cleanup
+
+        self.upload()
+        with SessionLocal() as db:
+            path = Path(db.query(Submission).filter_by(user_id=self.ids[0]).one().stored_path)
+        # Simulate stopping after the deletion transaction, before its immediate cleanup.
+        with patch('app.routers.admin.cleanup_pending_uploads'):
+            self.assertEqual(self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2]).status_code, 200)
+        self.assertTrue(path.exists())
+        completed = threading.Event()
+        cleanup = upload_cleanup.cleanup_pending_uploads
+
+        def notify_cleanup():
+            cleanup()
+            completed.set()
+
+        with patch.object(upload_cleanup, 'cleanup_pending_uploads', side_effect=notify_cleanup):
+            with TestClient(app):
+                self.assertTrue(completed.wait(5), 'Background cleanup did not run')
+                self.assertFalse(path.exists())
+        with SessionLocal() as db:
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+
+    def test_delete_account_handles_missing_files_and_rejects_external_paths(self):
+        self.upload()
+        outside = Path(work.name) / 'unrelated.csv'
+        outside.write_bytes(b'keep')
+        with SessionLocal() as db:
+            sub = db.query(Submission).filter_by(user_id=self.ids[0]).one()
+            path = Path(sub.stored_path)
+            sub.stored_path = str(outside)
+            db.commit()
+        response = self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2])
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(outside.read_bytes(), b'keep')
+        with SessionLocal() as db:
+            self.assertIsNotNone(db.get(User, self.ids[0]))
+            db.query(Submission).filter_by(user_id=self.ids[0]).one().stored_path = str(path)
+            db.commit()
+        path.unlink()
+        self.assertEqual(self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2]).status_code, 200)
+        self.assertTrue(outside.exists())
+
+    def test_delete_account_preserves_a_file_referenced_by_another_account(self):
+        self.upload()
+        with SessionLocal() as db:
+            original = db.query(Submission).filter_by(user_id=self.ids[0]).one()
+            path = Path(original.stored_path)
+            db.add(Submission(user_id=self.ids[1], problem_id=self.problem_id,
+                              filename='shared.csv', stored_path=str(path)))
+            db.commit()
+        self.assertEqual(self.client.delete(f'/api/admin/users/{self.ids[0]}', headers=self.headers[2]).status_code, 200)
+        self.assertTrue(path.is_file())
+        self.assertEqual(self.client.delete(f'/api/admin/users/{self.ids[1]}', headers=self.headers[2]).status_code, 200)
+        self.assertFalse(path.exists())
+
+    def test_delete_account_requires_admin_and_protects_default_admin(self):
+        endpoint = f'/api/admin/users/{self.ids[0]}'
+        self.assertEqual(self.client.delete(endpoint).status_code, 401)
+        self.assertEqual(self.client.delete(endpoint, headers=self.headers[1]).status_code, 403)
+        self.assertEqual(self.client.delete('/api/admin/users/99999999', headers=self.headers[2]).status_code, 404)
+        with SessionLocal() as db:
+            admin = db.query(User).filter_by(username='admin').one()
+            default_id = admin.id
+        self.assertEqual(self.client.delete(f'/api/admin/users/{default_id}', headers=self.headers[2]).status_code, 400)
+
+    def test_sqlite_connections_enforce_foreign_keys(self):
+        with engine.connect() as connection:
+            self.assertEqual(connection.exec_driver_sql('PRAGMA foreign_keys').scalar(), 1)
+
+    def test_admin_submission_views_include_native_metric_context(self):
+        with SessionLocal() as db:
+            cv = db.get(Problem, self.problem_id)
+            cv.metric = 'mAP'
+            cv.evaluation_config = 'eval_1_cv_hico'
+            nlp = Problem(code=uuid4().hex[:12], title='Low BLEU', metric='BLEU',
+                          evaluation_config='eval_2_nlp_tung')
+            db.add(nlp)
+            db.flush()
+            db.add_all([
+                Submission(user_id=self.ids[0], problem_id=cv.id, filename='cv.csv', score=.75),
+                Submission(user_id=self.ids[0], problem_id=nlp.id, filename='nlp.csv', score=.42),
+                Submission(user_id=self.ids[1], problem_id=cv.id, filename='pending.csv', score=None),
+            ])
+            db.commit()
+        overview = self.client.get('/api/admin/overview', headers=self.headers[2])
+        repository = self.client.get('/api/admin/submissions/valid', headers=self.headers[2])
+        self.assertEqual(overview.status_code, 200)
+        self.assertEqual(repository.status_code, 200)
+        for rows in (overview.json()['recent_submissions'], repository.json()):
+            scored = {row['evaluation_config']: row for row in rows if row['score'] is not None}
+            self.assertEqual(scored['eval_1_cv_hico']['metric'], 'mAP')
+            self.assertEqual(scored['eval_1_cv_hico']['score'], .75)
+            self.assertEqual(scored['eval_2_nlp_tung']['metric'], 'BLEU')
+            self.assertEqual(scored['eval_2_nlp_tung']['score'], .42)
+        pending = next(row for row in overview.json()['recent_submissions'] if row['score'] is None)
+        self.assertEqual(pending['evaluation_config'], 'eval_1_cv_hico')
 
     def test_parallel_limit_reservation_is_atomic(self):
         with ThreadPoolExecutor(max_workers=20) as pool:
@@ -657,6 +829,7 @@ class SubmissionQueueTest(unittest.TestCase):
             self.assertEqual(db.get(Problem, self.problem_id).pdf_filename, 'missing.pdf')
 
     def test_uploaded_problem_pdf_is_served_on_creation_and_replacement(self):
+        before = set(self.pdf_directory.iterdir())
         code = 'NLP-' + uuid4().hex[:12]
         content = b'%PDF-1.4 uploaded contest statement'
         response = self.client.post('/api/problems', headers=self.headers[2],
@@ -674,6 +847,148 @@ class SubmissionQueueTest(unittest.TestCase):
         self.assertEqual(downloaded.status_code, 200)
         self.assertEqual(downloaded.headers['content-type'], 'application/pdf')
         self.assertEqual(downloaded.content, replacement)
+        self.assertEqual(downloaded.headers['cache-control'], 'no-store')
+        current_path = self.pdf_directory / response.json()['pdf_filename']
+        self.assertEqual(set(self.pdf_directory.iterdir()) - before, {current_path})
+        self.assertFalse((self.pdf_directory / data['pdf_filename']).exists())
+        # Reusing the upload's original name also leaves exactly one stored PDF.
+        updated = self.client.post(f"/api/problems/{data['id']}/upload-pdf", headers=self.headers[2],
+                                   files={'file': ('updated.pdf', content, 'application/pdf')})
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(set(self.pdf_directory.iterdir()) - before,
+                         {self.pdf_directory / updated.json()['pdf_filename']})
+        self.assertEqual(self.client.get(updated.json()['pdf_url']).content, content)
+
+    def pdf_upload(self, content=b'%PDF-1.4 current statement', filename='statement.pdf'):
+        return self.client.post(f'/api/problems/{self.problem_id}/upload-pdf', headers=self.headers[2],
+                                files={'file': (filename, content, 'application/pdf')})
+
+    def test_pdf_replacement_retires_all_legacy_versions_of_its_problem(self):
+        with SessionLocal() as db:
+            code = db.get(Problem, self.problem_id).code.lower()
+            legacy = [self.pdf_directory / f'de_thi_{code}_cv_{suffix}.pdf'
+                      for suffix in ('first', 'second', 'current')]
+            for path in legacy:
+                path.write_bytes(b'%PDF-1.4 old')
+            db.get(Problem, self.problem_id).pdf_filename = legacy[-1].name
+            db.commit()
+        unrelated = self.pdf_directory / 'unrelated.pdf'
+        unrelated.write_bytes(b'%PDF-1.4 keep')
+        response = self.pdf_upload()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(all(not path.exists() for path in legacy))
+        self.assertTrue((self.pdf_directory / response.json()['pdf_filename']).exists())
+        self.assertEqual(unrelated.read_bytes(), b'%PDF-1.4 keep')
+
+    def test_pdf_replacement_preserves_current_pdf_on_database_failure(self):
+        from sqlalchemy.orm import Session
+
+        initial = self.pdf_upload()
+        old_name = initial.json()['pdf_filename']
+        before = set(self.pdf_directory.iterdir())
+        with patch.object(Session, 'commit', side_effect=RuntimeError('commit failed')):
+            with self.assertRaisesRegex(RuntimeError, 'commit failed'):
+                self.pdf_upload(b'%PDF-1.4 replacement')
+        self.assertEqual(set(self.pdf_directory.iterdir()), before)
+        self.assertEqual(self.client.get(initial.json()['pdf_url']).content, b'%PDF-1.4 current statement')
+        with SessionLocal() as db:
+            self.assertEqual(db.get(Problem, self.problem_id).pdf_filename, old_name)
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+
+    def test_pdf_replacement_removes_partial_upload_on_read_failure(self):
+        initial = self.pdf_upload()
+        before = set(self.pdf_directory.iterdir())
+
+        def broken_copy(source, target):
+            target.write(b'%PDF-1.4 partial')
+            raise OSError('upload interrupted')
+
+        with patch('app.problem_pdf_storage.shutil.copyfileobj', side_effect=broken_copy):
+            with self.assertRaisesRegex(OSError, 'upload interrupted'):
+                self.pdf_upload()
+        self.assertEqual(set(self.pdf_directory.iterdir()), before)
+        self.assertEqual(self.client.get(initial.json()['pdf_url']).content, b'%PDF-1.4 current statement')
+
+    def test_parallel_pdf_replacements_keep_one_current_file(self):
+        before = set(self.pdf_directory.iterdir())
+        contents = [f'%PDF-1.4 replacement {index}'.encode() for index in range(8)]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            responses = list(pool.map(self.pdf_upload, contents))
+        self.assertTrue(all(response.status_code == 200 for response in responses),
+                        [response.text for response in responses if response.status_code != 200])
+        details = self.client.get(f'/api/problems/{self.problem_id}').json()
+        self.assertEqual(set(self.pdf_directory.iterdir()) - before,
+                         {self.pdf_directory / details['pdf_filename']})
+        self.assertIn(self.client.get(details['pdf_url']).content, contents)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(UploadCleanupJob).count(), 0)
+
+    def test_pdf_cleanup_retries_locked_old_file_and_preserves_new_file(self):
+        from app.upload_cleanup import cleanup_pending_uploads
+
+        initial = self.pdf_upload()
+        old_path = self.pdf_directory / initial.json()['pdf_filename']
+        with patch.object(Path, 'unlink', side_effect=PermissionError('file locked')):
+            with self.assertLogs('app.upload_cleanup', level='WARNING'):
+                response = self.pdf_upload(b'%PDF-1.4 replacement')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(old_path.exists())
+        self.assertEqual(self.client.get(response.json()['pdf_url']).content, b'%PDF-1.4 replacement')
+        with SessionLocal() as db:
+            job = db.query(UploadCleanupJob).one()
+            self.assertEqual(job.upload_kind, 'problem_pdf')
+            job.next_attempt_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
+            db.commit()
+        cleanup_pending_uploads()
+        self.assertFalse(old_path.exists())
+        self.assertEqual(self.client.get(response.json()['pdf_url']).content, b'%PDF-1.4 replacement')
+
+    def test_pdf_replacement_preserves_other_problem_files_and_shared_pdf(self):
+        initial = self.pdf_upload()
+        old_path = self.pdf_directory / initial.json()['pdf_filename']
+        with SessionLocal() as db:
+            other = Problem(code=uuid4().hex[:12], title='Other PDF', pdf_filename=old_path.name)
+            db.add(other)
+            db.commit()
+            other_id = other.id
+        response = self.pdf_upload(b'%PDF-1.4 replacement')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(old_path.exists())
+        self.assertEqual(self.client.get(f'/api/problems/{other_id}/pdf').content, b'%PDF-1.4 current statement')
+        self.assertEqual(self.client.delete(f'/api/problems/{other_id}', headers=self.headers[2]).status_code, 200)
+        self.assertFalse(old_path.exists())
+        self.assertEqual(self.client.get(response.json()['pdf_url']).content, b'%PDF-1.4 replacement')
+
+    def test_legacy_pdf_cleanup_does_not_claim_another_problem_code_prefix(self):
+        with SessionLocal() as db:
+            code = db.get(Problem, self.problem_id).code.lower()
+            other = Problem(code=code + '_cv', title='Overlapping code')
+            db.add(other)
+            db.commit()
+        paths = [self.pdf_directory / f'de_thi_{code}_cv_cv_{suffix}.pdf'
+                 for suffix in ('current', 'previous')]
+        for path in paths:
+            path.write_bytes(b'%PDF-1.4 other problem')
+        self.assertEqual(self.pdf_upload().status_code, 200)
+        self.assertTrue(all(path.exists() for path in paths))
+
+    def test_pdf_replacement_survives_problem_code_and_category_changes(self):
+        initial = self.pdf_upload()
+        response = self.client.put(f'/api/problems/{self.problem_id}', headers=self.headers[2],
+                                   json={'code': uuid4().hex[:12], 'category': 'NLP'})
+        self.assertEqual(response.status_code, 200)
+        updated = self.pdf_upload(b'%PDF-1.4 replacement')
+        self.assertEqual(updated.status_code, 200)
+        self.assertFalse((self.pdf_directory / initial.json()['pdf_filename']).exists())
+        self.assertEqual(self.client.get(updated.json()['pdf_url']).content, b'%PDF-1.4 replacement')
+
+    def test_problem_creation_with_invalid_schedule_does_not_save_pdf(self):
+        before = set(self.pdf_directory.iterdir())
+        response = self.client.post('/api/problems', headers=self.headers[2],
+                                    data={'code': uuid4().hex[:12], 'title': 'Bad schedule', 'public_unlock_at': 'bad'},
+                                    files={'file': ('statement.pdf', b'%PDF-1.4 upload', 'application/pdf')})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(set(self.pdf_directory.iterdir()), before)
 
     def test_public_private_schedules_apply_identically_to_csv_and_notebooks(self):
         endpoint = f'/api/problems/{self.problem_id}'

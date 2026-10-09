@@ -1,6 +1,7 @@
 import os
 import re
 import unicodedata
+from pathlib import Path
 from urllib.parse import quote
 
 PDF_DIR = "./uploads/problems"
@@ -39,7 +40,9 @@ def resolve_problem_pdf(existing_filename: str | None) -> str | None:
     """Find an explicitly attached PDF without generating or attaching files."""
     if not existing_filename:
         return None
+    root = Path(PDF_DIR).resolve()
     for filename in (existing_filename, sanitize_filename(existing_filename)):
-        if os.path.isfile(os.path.join(PDF_DIR, filename)):
+        path = root / filename
+        if path.resolve().is_relative_to(root) and path.is_file():
             return filename
     return None

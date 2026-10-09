@@ -6,7 +6,8 @@ import {
   AdminSubmission, 
   LeaderboardItem, 
   OverallLeaderboardItem,
-  AdminStats, 
+  AdminStats,
+  AdminRecentSubmission,
   EvaluatorOption,
   BatchCreateUserParams,
   BatchCreateUserResponse,
@@ -423,9 +424,7 @@ export async function fetchOverallLeaderboard(type: 'public' | 'private' = 'publ
   return res.json();
 }
 
-export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_submissions: {
-  id: number; user: string; problem: string; score: number | null; status: string; time: string;
-}[] }> {
+export async function fetchAdminOverview(): Promise<{ stats: AdminStats; recent_submissions: AdminRecentSubmission[] }> {
   const res = await fetch(`${API_BASE}/api/admin/overview`, { 
     cache: 'no-store',
     headers: getAuthHeaders() 

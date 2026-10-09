@@ -117,6 +117,8 @@ export interface AdminSubmission {
   problem_id: number;
   problem_code: string;
   problem_title: string;
+  metric: string | null;
+  evaluation_config: string | null;
   filename: string;
   submission_type: string;
   status: string;
@@ -179,6 +181,17 @@ export interface OverallLeaderboardItem {
   total_problems_count: number;
   components: ProblemScoreComponent[];
   last_submission_time?: string | null;
+}
+
+export interface AdminRecentSubmission {
+  id: number;
+  user: string;
+  problem: string;
+  metric: string | null;
+  evaluation_config: string | null;
+  score: number | null;
+  status: string;
+  time: string;
 }
 
 export interface AdminStats {

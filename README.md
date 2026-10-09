@@ -72,6 +72,22 @@ system_olpai2026/
    - Thêm bài toán thi mới vào hệ thống với form quản trị trực quan.
    - Giám sát toàn bộ nhật ký nộp bài của tất cả các đội thi trên toàn trường.
 
+Khi admin xóa tài khoản, hệ thống xóa bài nộp, điểm số, notebook và hàng đợi chấm bài
+của tài khoản đó, đồng thời cập nhật bảng xếp hạng. File CSV và `.ipynb` được dọn
+sau khi giao dịch database lưu thành công. Yêu cầu dọn file được lưu trong bảng
+`upload_cleanup_jobs`; file đang bị khóa hoặc gặp lỗi I/O sẽ được tự thử lại sau
+30 giây, kể cả sau khi backend khởi động lại. Chỉ dọn đường dẫn đã lưu trong bản
+ghi bài nộp/notebook, trong thư mục upload tương ứng; giữ file còn được tài khoản
+khác tham chiếu. Các file đã mất bản ghi từ những lần xóa trước không được tự dò
+và xóa. Backend tự tạo bảng dọn file khi khởi động bằng phiên bản mã mới.
+
+PDF đề thi được lưu theo ID đề và tên phiên bản riêng. Khi thay PDF, hệ thống
+lưu bản mới và cập nhật database trước, sau đó xóa bản trước cùng các phiên bản
+cũ nhận diện được của đề đó trong thư mục PDF. Khi xóa đề thi, PDF liên quan
+cũng được dọn. Các file còn được đề khác tham chiếu được giữ; file đang bị khóa
+sẽ được thử dọn lại qua `upload_cleanup_jobs`. Cập nhật đồng thời được tuần tự
+hóa bằng khóa ghi SQLite, và cập nhật thất bại giữ nguyên PDF đang dùng.
+
 > **💡 Tính năng chuyển đổi nhanh tác nhân (Demo Mode)**: Trên góc phải thanh Navbar, bạn chỉ cần bấm vào avatar/tên người dùng để chọn chuyển đổi tức thời giữa tài khoản **Admin (Ban Tổ Chức)** và các đội **Thí sinh (AT18, AT19, K18)** để trải nghiệm giao diện của cả 2 tác nhân!
 
 ---

@@ -1,14 +1,15 @@
 import os
-import shutil
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 from ..database import get_db
 from ..models import Problem, User
 from ..schemas import ProblemResponse, ProblemCreate, ProblemUpdate, EvaluatorInfo
-from ..pdf_utils import PDF_DIR, resolve_problem_pdf, make_content_disposition, sanitize_filename
+from ..pdf_utils import PDF_DIR, resolve_problem_pdf, make_content_disposition
+from ..problem_pdf_storage import save_problem_pdf, queue_superseded_pdfs, cleanup_problem_pdfs
 from ..auth_utils import get_current_user_optional, require_admin
 from ..evaluators import list_available_evaluators
 
@@ -112,7 +113,7 @@ def view_problem_pdf(
     return FileResponse(
         path=filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": content_disp}
+        headers={"Content-Disposition": content_disp, "Cache-Control": "no-store"}
     )
 
 @router.post("", response_model=ProblemResponse)
@@ -143,15 +144,6 @@ def create_problem(
     existing = db.query(Problem).filter(Problem.code == clean_code).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Mã đề bài '{clean_code}' đã tồn tại trên hệ thống")
-
-    saved_filename = None
-    if file and file.filename:
-        clean_raw_name = sanitize_filename(file.filename, fallback_prefix="de_thi")
-        safe_name = f"de_thi_{clean_code.lower()}_{clean_cat.lower()}_{clean_raw_name}"
-        dest_path = os.path.join(PDF_DIR, safe_name)
-        with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        saved_filename = safe_name
 
     parsed_unlock_at = None
     if unlock_at and unlock_at.strip():
@@ -203,10 +195,13 @@ def create_problem(
         private_is_locked=private_is_locked,
         private_unlock_at=parsed_private_unlock_at,
         evaluation_config=clean_eval_config,
-        pdf_filename=saved_filename,
     )
     db.add(problem)
-    db.commit()
+    if file and file.filename:
+        db.flush()  # Allocate the stable problem ID before naming its upload.
+        save_problem_pdf(db, problem, file, PDF_DIR)
+    else:
+        db.commit()
     db.refresh(problem)
 
     return serialize_problem(problem)
@@ -277,18 +272,15 @@ def upload_problem_pdf(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
+    # Serialize replacements across processes so each upload retires the PDF
+    # committed by the preceding request, including simultaneous updates.
+    db.rollback()
+    db.execute(text("BEGIN IMMEDIATE"))
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
 
-    clean_raw_name = sanitize_filename(file.filename, fallback_prefix="de_thi")
-    safe_name = f"de_thi_{problem.code.lower()}_{problem.category.lower()}_{clean_raw_name}"
-    dest_path = os.path.join(PDF_DIR, safe_name)
-    with open(dest_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    problem.pdf_filename = safe_name
-    db.commit()
+    save_problem_pdf(db, problem, file, PDF_DIR)
     db.refresh(problem)
     return serialize_problem(problem)
 
@@ -298,9 +290,13 @@ def delete_problem(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
+    db.rollback()
+    db.execute(text("BEGIN IMMEDIATE"))
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
+    queue_superseded_pdfs(db, problem, PDF_DIR)
     db.delete(problem)
     db.commit()
+    cleanup_problem_pdfs()
     return {"status": "success", "message": f"Đã xóa đề bài {problem.code}"}

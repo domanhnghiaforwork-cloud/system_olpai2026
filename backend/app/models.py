@@ -107,6 +107,16 @@ class Submission(Base):
     job = relationship("SubmissionJob", back_populates="submission", uselist=False, cascade="all, delete-orphan")
 
 
+class UploadCleanupJob(Base):
+    """File deletion committed with record removal/replacement until successful."""
+    __tablename__ = "upload_cleanup_jobs"
+
+    id = Column(Integer, primary_key=True)
+    stored_path = Column(Text, nullable=False)
+    upload_kind = Column(String(20), nullable=False)
+    next_attempt_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False, index=True)
+
+
 class TrainingNotebook(Base):
     """One immutable training notebook per student/problem/public-private split."""
     __tablename__ = "training_notebooks"

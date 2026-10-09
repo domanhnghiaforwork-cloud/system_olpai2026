@@ -4,17 +4,21 @@ import zipfile
 import datetime
 import secrets
 import string
+import logging
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from ..database import get_db
-from ..models import User, Problem, Submission, SubmissionJob, Dataset
+from ..models import User, Problem, Submission, SubmissionJob, Dataset, TrainingNotebook
 from ..evaluators.ranking import submission_order_by
 from ..schemas import AdminUserResponse, UserCreate, UserUpdate, UserBatchCreate
 from ..auth_utils import require_admin
 from ..pdf_utils import make_content_disposition
 from ..chatbot_provisioning import enqueue_chatbot_account
+from ..leaderboard_events import bump_leaderboard_revision
+from ..upload_cleanup import enqueue_upload_cleanup, cleanup_pending_uploads
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -127,6 +131,8 @@ def get_admin_overview(db: Session = Depends(get_db)):
                 "id": s.id,
                 "user": s.user.full_name if s.user else "Unknown",
                 "problem": s.problem.code if s.problem else "Unknown",
+                "metric": s.problem.metric if s.problem else None,
+                "evaluation_config": s.problem.evaluation_config if s.problem else None,
                 "score": s.score,
                 "status": s.status,
                 "time": s.created_at
@@ -186,6 +192,8 @@ def list_valid_submissions(
             "problem_id": s.problem_id,
             "problem_code": s.problem.code if s.problem else f"P-{s.problem_id}",
             "problem_title": s.problem.title if s.problem else f"Problem {s.problem_id}",
+            "metric": s.problem.metric if s.problem else None,
+            "evaluation_config": s.problem.evaluation_config if s.problem else None,
             "filename": s.filename,
             "submission_type": s.submission_type or "public",
             "status": s.status,
@@ -555,22 +563,40 @@ def update_admin_user(user_id: int, data: UserUpdate, db: Session = Depends(get_
 @router.delete("/users/{user_id}")
 def delete_admin_user(user_id: int, db: Session = Depends(get_db)):
     """
-    Xóa tài khoản thí sinh và toàn bộ bài nộp liên quan.
+    Xóa tài khoản, bài nộp, notebook và các file liên quan.
     Bảo vệ không cho phép xóa tài khoản admin mặc định.
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+    # Serialize with submission reservations/worker commits before collecting files.
+    db.rollback()
+    try:
+        db.execute(text("BEGIN IMMEDIATE"))
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+        if user.username == "admin":
+            raise HTTPException(status_code=400, detail="Không thể xóa tài khoản Quản trị viên mặc định ('admin')")
+        username = user.username
+        submissions = db.query(Submission).filter_by(user_id=user_id).all()
+        for submission in submissions:
+            enqueue_upload_cleanup(db, submission.stored_path, "submission")
+        for notebook in db.query(TrainingNotebook).filter_by(user_id=user_id).all():
+            enqueue_upload_cleanup(db, notebook.stored_path, "notebook")
+        # Explicitly remove older orphaned jobs too, even on legacy schemas.
+        db.query(SubmissionJob).filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.delete(user)
+        for split in {submission.submission_type or "public" for submission in submissions}:
+            bump_leaderboard_revision(db, split)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-    if user.username == "admin":
-        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản Quản trị viên mặc định ('admin')")
-
-    # Xóa các bài nộp liên quan của thí sinh
-    db.query(Submission).filter(Submission.user_id == user.id).delete()
-    db.delete(user)
-    db.commit()
-
-    return {"success": True, "detail": f"Đã xóa tài khoản '{user.username}' thành công"}
+    # A failed unlink stays in the durable queue for the background task to retry.
+    try:
+        cleanup_pending_uploads()
+    except Exception:
+        logging.getLogger(__name__).exception("Upload cleanup deferred after account deletion")
+    return {"success": True, "detail": f"Đã xóa tài khoản '{username}' thành công"}
 
 @router.post("/users/{user_id}/reset-password")
 def reset_admin_user_password(

@@ -13,6 +13,7 @@ from pwdlib import PasswordHash
 
 from .database import SessionLocal
 from .models import ChatbotProvisionJob, User
+from .upload_cleanup import upload_cleanup_loop
 
 logger = logging.getLogger(__name__)
 _dispatch_lock = threading.Lock()
@@ -101,12 +102,15 @@ async def _dispatch_loop() -> None:
 
 @asynccontextmanager
 async def provisioning_lifespan(_app):
-    task = asyncio.create_task(_dispatch_loop()) if provisioning_enabled() else None
+    tasks = [asyncio.create_task(upload_cleanup_loop())]
+    if provisioning_enabled():
+        tasks.append(asyncio.create_task(_dispatch_loop()))
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             try:
                 await task
             except asyncio.CancelledError:
