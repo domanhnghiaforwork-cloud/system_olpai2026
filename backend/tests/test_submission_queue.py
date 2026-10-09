@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 import httpx
 from app.main import app
 from app.database import engine, SessionLocal
-from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User, ChatbotProvisionJob, UploadCleanupJob
+from app.models import Problem, Submission, SubmissionJob, TrainingNotebook, User, ChatbotProvisionJob, UploadCleanupJob, Dataset
 from app.auth_utils import create_access_token
 from app.evaluators.base import EvaluationValidationResult, EvaluationScoreResult
 from app.submission_jobs import claim_jobs, evaluate_job, finish_job
@@ -232,6 +232,115 @@ class SubmissionQueueTest(unittest.TestCase):
     def test_sqlite_connections_enforce_foreign_keys(self):
         with engine.connect() as connection:
             self.assertEqual(connection.exec_driver_sql('PRAGMA foreign_keys').scalar(), 1)
+
+    def create_dataset_link(self, unlock_at=None, is_locked=False, **overrides):
+        body = {'problem_id': self.problem_id, 'title': 'Independent link',
+                'download_url': 'https://example.invalid/dataset',
+                'unlock_at': unlock_at, 'is_locked': is_locked, **overrides}
+        return self.client.post('/api/datasets', headers=self.headers[2], json=body)
+
+    def test_dataset_schedule_accepts_equal_later_and_inherited_but_not_earlier(self):
+        parent = datetime.datetime(2026, 10, 9, 2, 0, 0)
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).unlock_at = parent
+            db.commit()
+        earlier = self.create_dataset_link('2026-10-09T08:59:59+07:00')
+        self.assertEqual(earlier.status_code, 422, earlier.text)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Dataset).filter_by(problem_id=self.problem_id).count(), 0)
+        for value in ('2026-10-09T09:00:00+07:00', '2026-10-09T10:00:00+07:00', None):
+            response = self.create_dataset_link(value)
+            self.assertEqual(response.status_code, 200, response.text)
+            if value is None:
+                self.assertIsNone(response.json()['unlock_at'])
+            else:
+                stored = datetime.datetime.fromisoformat(response.json()['unlock_at'])
+                self.assertGreaterEqual(stored.replace(tzinfo=None), parent)
+
+    def test_dataset_update_rejects_earlier_schedule_without_saving_other_changes(self):
+        parent = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        later = parent + datetime.timedelta(hours=1)
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).unlock_at = parent
+            db.commit()
+        created = self.create_dataset_link(later.isoformat() + 'Z').json()
+        response = self.client.put(f"/api/datasets/{created['id']}", headers=self.headers[2], json={
+            'title': 'Must not save', 'unlock_at': (parent - datetime.timedelta(seconds=1)).isoformat() + 'Z',
+        })
+        self.assertEqual(response.status_code, 422)
+        with SessionLocal() as db:
+            dataset = db.get(Dataset, created['id'])
+            self.assertEqual(dataset.title, created['title'])
+            self.assertEqual(dataset.unlock_at, later)
+        # Removing the separate schedule preserves the independent manual lock.
+        response = self.client.put(f"/api/datasets/{created['id']}", headers=self.headers[2],
+                                   json={'unlock_at': None, 'is_locked': True})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()['unlock_at'])
+        self.assertTrue(response.json()['is_locked'])
+
+    def test_dataset_url_is_released_only_after_both_schedules_and_manual_locks(self):
+        now = datetime.datetime.utcnow()
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).unlock_at = now - datetime.timedelta(minutes=30)
+            db.commit()
+        created = self.create_dataset_link((now + datetime.timedelta(minutes=30)).isoformat() + 'Z').json()
+
+        def visible_url(headers=None):
+            response = self.client.get(f'/api/datasets?problem_id={self.problem_id}', headers=headers)
+            self.assertEqual(response.status_code, 200)
+            return next(item for item in response.json() if item['id'] == created['id'])['download_url']
+
+        self.assertEqual(visible_url(), '')
+        self.assertEqual(visible_url(self.headers[0]), '')
+        self.assertEqual(visible_url(self.headers[2]), created['download_url'])
+        with SessionLocal() as db:
+            dataset = db.get(Dataset, created['id'])
+            dataset.unlock_at = now - datetime.timedelta(minutes=15)
+            db.commit()
+        self.assertEqual(visible_url(), created['download_url'])
+        with SessionLocal() as db:
+            dataset = db.get(Dataset, created['id'])
+            dataset.unlock_at = None
+            dataset.is_locked = True
+            db.commit()
+        self.assertEqual(visible_url(), '')
+        with SessionLocal() as db:
+            dataset = db.get(Dataset, created['id'])
+            dataset.is_locked = False
+            problem = db.get(Problem, self.problem_id)
+            problem.unlock_at = None
+            problem.is_locked = True
+            db.commit()
+        self.assertEqual(visible_url(), '')
+
+    def test_moving_problem_schedule_later_does_not_overwrite_dataset_schedule(self):
+        now = datetime.datetime.utcnow()
+        created = self.create_dataset_link((now + datetime.timedelta(hours=1)).isoformat() + 'Z').json()
+        parent_later = now + datetime.timedelta(hours=2)
+        response = self.client.put(f'/api/problems/{self.problem_id}', headers=self.headers[2],
+                                   json={'unlock_at': parent_later.isoformat() + 'Z'})
+        self.assertEqual(response.status_code, 200)
+        student_data = self.client.get(f'/api/datasets?problem_id={self.problem_id}').json()
+        self.assertEqual(student_data[0]['download_url'], '')
+        self.assertEqual(student_data[0]['unlock_at'], created['unlock_at'])
+        # A later independent dataset stays later when the problem is moved earlier.
+        later = parent_later + datetime.timedelta(hours=1)
+        self.assertEqual(self.client.put(f"/api/datasets/{created['id']}", headers=self.headers[2],
+                                        json={'unlock_at': later.isoformat() + 'Z'}).status_code, 200)
+        self.client.put(f'/api/problems/{self.problem_id}', headers=self.headers[2], json={'unlock_at': None})
+        with SessionLocal() as db:
+            self.assertEqual(db.get(Dataset, created['id']).unlock_at, later)
+
+    def test_dataset_manual_lock_is_independent_and_requires_admin(self):
+        response = self.create_dataset_link(is_locked=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['is_locked'])
+        endpoint = f"/api/datasets/{response.json()['id']}"
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[0], json={'is_locked': False}).status_code, 403)
+        unlocked = self.client.put(endpoint, headers=self.headers[2], json={'is_locked': False})
+        self.assertEqual(unlocked.status_code, 200)
+        self.assertFalse(unlocked.json()['is_locked'])
 
     def test_admin_submission_views_include_native_metric_context(self):
         with SessionLocal() as db:
@@ -1009,6 +1118,95 @@ class SubmissionQueueTest(unittest.TestCase):
                 self.client.put(endpoint, headers=self.headers[2], json={f'{split}_unlock_at': past})
                 self.assertEqual(self.upload(split=split).status_code, 202)
                 self.assertEqual(self.notebook_upload(split).status_code, 201)
+
+    def test_submission_schedules_cannot_open_before_problem_and_allow_equal_or_later(self):
+        parent = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        with SessionLocal() as db:
+            db.get(Problem, self.problem_id).unlock_at = parent
+            db.commit()
+        endpoint = f'/api/problems/{self.problem_id}'
+        for split in ('public', 'private'):
+            response = self.client.put(endpoint, headers=self.headers[2], json={
+                f'{split}_unlock_at': (parent - datetime.timedelta(seconds=1)).isoformat() + 'Z',
+                'max_public_submissions': 99,
+            })
+            self.assertEqual(response.status_code, 422, response.text)
+            with SessionLocal() as db:
+                self.assertEqual(db.get(Problem, self.problem_id).max_public_submissions, 1)
+            for time in (parent, parent + datetime.timedelta(hours=1)):
+                value = time.replace(tzinfo=datetime.timezone.utc).astimezone(datetime.timezone(datetime.timedelta(hours=7)))
+                response = self.client.put(endpoint, headers=self.headers[2],
+                                           json={f'{split}_unlock_at': value.isoformat()})
+                self.assertEqual(response.status_code, 200, response.text)
+                stored = datetime.datetime.fromisoformat(response.json()[f'{split}_unlock_at'])
+                self.assertEqual(stored.replace(tzinfo=None), time)
+            self.assertEqual(self.client.put(endpoint, headers=self.headers[2],
+                                            json={f'{split}_unlock_at': None}).status_code, 200)
+
+    def test_submission_problem_creation_validates_dependent_schedules_before_pdf_storage(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        parent = now + datetime.timedelta(hours=1)
+        before = set(self.pdf_directory.iterdir())
+        for split in ('public', 'private'):
+            response = self.client.post('/api/problems', headers=self.headers[2],
+                data={'code': uuid4().hex[:12], 'title': 'Invalid split schedule', 'unlock_at': parent.isoformat(),
+                      f'{split}_unlock_at': now.isoformat()},
+                files={'file': ('statement.pdf', b'%PDF-1.4 statement', 'application/pdf')})
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertEqual(set(self.pdf_directory.iterdir()), before)
+        response = self.client.post('/api/problems', headers=self.headers[2], data={
+            'code': uuid4().hex[:12], 'title': 'Independent split schedules',
+            'unlock_at': parent.isoformat(), 'public_unlock_at': parent.isoformat(),
+            'private_unlock_at': (parent + datetime.timedelta(hours=1)).isoformat(),
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        invalid = self.client.post('/api/problems', headers=self.headers[2], data={
+            'code': uuid4().hex[:12], 'title': 'Invalid date', 'private_unlock_at': 'bad',
+        })
+        self.assertEqual(invalid.status_code, 422)
+
+    def test_parent_and_split_schedules_block_both_csv_and_notebook_until_later_gate(self):
+        now = datetime.datetime.utcnow()
+        endpoint = f'/api/problems/{self.problem_id}'
+        future = (now + datetime.timedelta(hours=1)).isoformat() + 'Z'
+        later = (now + datetime.timedelta(hours=2)).isoformat() + 'Z'
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[2], json={
+            'unlock_at': future, 'public_unlock_at': later, 'private_unlock_at': later,
+        }).status_code, 200)
+        for split in ('public', 'private'):
+            self.assertEqual(self.upload(split=split).status_code, 403)
+            self.assertEqual(self.notebook_upload(split).status_code, 403)
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[2],
+                                        json={'unlock_at': (now - datetime.timedelta(minutes=2)).isoformat() + 'Z'}).status_code, 200)
+        for split in ('public', 'private'):
+            self.assertEqual(self.upload(split=split).status_code, 403)
+            self.assertEqual(self.notebook_upload(split).status_code, 403)
+        for split in ('public', 'private'):
+            self.assertEqual(self.client.put(endpoint, headers=self.headers[2],
+                json={f'{split}_unlock_at': (now - datetime.timedelta(minutes=1)).isoformat() + 'Z'}).status_code, 200)
+            self.assertEqual(self.upload(split=split).status_code, 202)
+            self.assertEqual(self.notebook_upload(split).status_code, 201)
+
+    def test_countdown_priority_preserves_split_times_when_problem_schedule_changes(self):
+        now = datetime.datetime.utcnow()
+        public_time = now + datetime.timedelta(minutes=10)
+        private_time = now + datetime.timedelta(minutes=40)
+        endpoint = f'/api/problems/{self.problem_id}'
+        self.assertEqual(self.client.put(endpoint, headers=self.headers[2], json={
+            'public_unlock_at': public_time.isoformat() + 'Z',
+            'private_unlock_at': private_time.isoformat() + 'Z',
+        }).status_code, 200)
+        for minutes in (30, 5, 50):
+            response = self.client.put(endpoint, headers=self.headers[2],
+                                       json={'unlock_at': (now + datetime.timedelta(minutes=minutes)).isoformat() + 'Z'})
+            self.assertEqual(response.status_code, 200, response.text)
+            with SessionLocal() as db:
+                problem = db.get(Problem, self.problem_id)
+                self.assertEqual(problem.public_unlock_at, public_time)
+                self.assertEqual(problem.private_unlock_at, private_time)
+            for split in ('public', 'private'):
+                self.assertEqual(self.upload(split=split).status_code, 403)
+                self.assertEqual(self.notebook_upload(split).status_code, 403)
 
     def test_public_schedule_round_trips_vietnam_time_and_student_cannot_change_it(self):
         endpoint = f'/api/problems/{self.problem_id}'

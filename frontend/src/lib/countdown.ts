@@ -67,6 +67,27 @@ export function getItemLockStatus(
   return { type: 'UNLOCKED' };
 }
 
+/** A child opens only when both its own gate and the parent gate are open. */
+export function getDependentLockStatus(
+  child: { is_locked?: boolean; unlock_at?: string | null },
+  parent: { is_locked?: boolean; unlock_at?: string | null } | undefined,
+  now: number,
+): LockStatus {
+  const item = getItemLockStatus(child.is_locked, child.unlock_at, now);
+  const problem = getItemLockStatus(parent?.is_locked, parent?.unlock_at, now);
+  if (item.type === 'LOCKED' || problem.type === 'LOCKED') return { type: 'LOCKED' };
+  if (item.type === 'COUNTDOWN' && problem.type === 'COUNTDOWN') {
+    return item.remainingMs >= problem.remainingMs ? item : problem;
+  }
+  return item.type === 'COUNTDOWN' ? item : problem;
+}
+
+export function opensBeforeProblem(unlockAt: string | null, problemUnlockAt?: string | null): boolean {
+  const child = parseUnlockDate(unlockAt);
+  const parent = parseUnlockDate(problemUnlockAt);
+  return !!child && !!parent && child.getTime() < parent.getTime();
+}
+
 /**
  * Convert Date or ISO string into datetime-local value (YYYY-MM-DDTHH:mm)
  * in the user's LOCAL browser timezone.
@@ -94,13 +115,16 @@ export function toUtcIsoString(dateInput?: string | null): string | null {
 }
 
 /** Submission schedules are entered in Vietnam time regardless of browser timezone. */
-export function toVietnamDatetimeLocal(value?: Date | string | null): string {
+export function toVietnamDatetimeLocal(value?: Date | string | null, includeSeconds = false): string {
   const date = parseUnlockDate(value);
   if (!date) return '';
-  return new Intl.DateTimeFormat('sv-SE', {
+  const local = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    second: includeSeconds ? '2-digit' : undefined,
   }).format(date).replace(' ', 'T');
+  return includeSeconds && date.getMilliseconds()
+    ? `${local}.${String(date.getMilliseconds()).padStart(3, '0')}` : local;
 }
 
 export function vietnamDatetimeToUtc(value: string): string | null {

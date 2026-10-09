@@ -6,7 +6,7 @@ import { updateProblem, getCandidateSubmissionDownloadUrl } from '@/lib/api';
 import { prepareSubmission, readPendingSubmission, sendAndTrackSubmission, trackSubmission } from '@/lib/submissionTracker';
 import { BestScoreNotebookCard } from '@/components/BestScoreNotebookCard';
 import { SubmissionScheduleFields } from '@/components/SubmissionScheduleFields';
-import { getItemLockStatus, toVietnamDatetimeLocal, vietnamDatetimeToUtc } from '@/lib/countdown';
+import { getItemLockStatus, getDependentLockStatus, opensBeforeProblem, toVietnamDatetimeLocal, vietnamDatetimeToUtc } from '@/lib/countdown';
 import { formatScore } from '@/lib/scoreDisplay';
 
 interface SubmitTabProps {
@@ -57,15 +57,14 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const [editPrivateIsLocked, setEditPrivateIsLocked] = useState(false);
   const [editPrivateUnlockAt, setEditPrivateUnlockAt] = useState('');
   const [isSavingLimits, setIsSavingLimits] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
-  const availableProblems = problems.filter((problem) => (
-    getItemLockStatus(problem.is_locked, problem.unlock_at, now).type === 'UNLOCKED'
-    && Boolean(problem.evaluation_config && problem.evaluation_config.trim() !== '')
-  ));
+  const availableProblems = problems;
   const activeProblem = availableProblems.find((problem) => problem.id === selectedProblemId) || availableProblems[0];
   const activeProblemId = activeProblem?.id ?? 0;
   const hasNoProblems = availableProblems.length === 0;
+  const hasEvaluator = Boolean(activeProblem?.evaluation_config?.trim());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const trackingController = useRef<AbortController | null>(null);
@@ -124,7 +123,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
   useEffect(() => () => trackingController.current?.abort(), []);
 
-  // Tự động đồng bộ đề thi nếu đề hiện tại bị khóa hoặc đang đếm ngược
+  // Keep the selected problem even while it is locked or counting down.
   useEffect(() => {
     if (availableProblems.length > 0) {
       const isSelectedAvailable = availableProblems.some((p) => p.id === selectedProblemId);
@@ -141,13 +140,15 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const maxPrivate = activeProblem?.max_private_submissions ?? 2;
 
   // Trạng thái khóa & đếm ngược mở khóa cho vòng nộp Private
-  const privateLockStatus = getItemLockStatus(
-    activeProblem?.private_is_locked,
-    activeProblem?.private_unlock_at,
-    now
+  const privateLockStatus = getDependentLockStatus(
+    { is_locked: activeProblem?.private_is_locked, unlock_at: activeProblem?.private_unlock_at },
+    activeProblem, now
   );
   const isPrivateLocked = !isAdmin && privateLockStatus.type !== 'UNLOCKED';
-  const publicLockStatus = getItemLockStatus(activeProblem?.public_is_locked, activeProblem?.public_unlock_at, now);
+  const publicLockStatus = getDependentLockStatus(
+    { is_locked: activeProblem?.public_is_locked, unlock_at: activeProblem?.public_unlock_at },
+    activeProblem, now
+  );
   const isPublicLocked = !isAdmin && publicLockStatus.type !== 'UNLOCKED';
 
   // Hàm kiểm tra bài nộp hợp lệ để tính vào giới hạn số lần nộp.
@@ -248,7 +249,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
   const isCurrentExhausted = submissionType === 'public' ? isPublicExhausted : isPrivateExhausted;
   const currentUsed = submissionType === 'public' ? usedPublic : usedPrivate;
   const currentMax = submissionType === 'public' ? maxPublic : maxPrivate;
-  const isCurrentBlocked = hasNoProblems || isCurrentLocked || isCurrentExhausted;
+  const isCurrentBlocked = hasNoProblems || !hasEvaluator || isCurrentLocked || isCurrentExhausted;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isCurrentBlocked || isWorking) return;
@@ -285,7 +286,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
     e.preventDefault();
     if (isWorking) return;
     if (!activeProblem || !activeProblemId) {
-      setErrorMsg('Hiện tại không có đề thi nào mở nhận bài nộp.');
+      setErrorMsg('Hiện tại chưa có đề thi để nộp bài.');
+      return;
+    }
+    if (!hasEvaluator) {
+      setErrorMsg('Đề thi này chưa được cấu hình chấm điểm.');
       return;
     }
 
@@ -338,17 +343,25 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
     setEditMaxPublic(maxPublic);
     setEditMaxPrivate(maxPrivate);
     setEditPublicIsLocked(Boolean(activeProblem?.public_is_locked));
-    setEditPublicUnlockAt(toVietnamDatetimeLocal(activeProblem?.public_unlock_at));
+    setEditPublicUnlockAt(toVietnamDatetimeLocal(activeProblem?.public_unlock_at, true));
     setEditPrivateIsLocked(Boolean(activeProblem?.private_is_locked));
-    setEditPrivateUnlockAt(toVietnamDatetimeLocal(activeProblem?.private_unlock_at));
+    setEditPrivateUnlockAt(toVietnamDatetimeLocal(activeProblem?.private_unlock_at, true));
+    setScheduleError(null);
     setIsEditLimitsOpen(true);
   };
 
   const handleSaveLimits = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProblemId) return;
+    for (const [name, value] of [['Public', editPublicUnlockAt], ['Private', editPrivateUnlockAt]]) {
+      if (opensBeforeProblem(vietnamDatetimeToUtc(value), activeProblem?.unlock_at)) {
+        setScheduleError(`Giờ mở nộp ${name} không được sớm hơn giờ mở đề thi.`);
+        return;
+      }
+    }
     try {
       setIsSavingLimits(true);
+      setScheduleError(null);
       await updateProblem(activeProblemId, {
         max_public_submissions: editMaxPublic,
         max_private_submissions: editMaxPrivate,
@@ -360,7 +373,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
       setIsEditLimitsOpen(false);
       onRefreshProblems();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Lỗi khi cập nhật cấu hình nộp bài');
+      setScheduleError(err instanceof Error ? err.message : 'Lỗi khi cập nhật cấu hình nộp bài');
     } finally {
       setIsSavingLimits(false);
     }
@@ -394,7 +407,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
         <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 px-6 py-4 sm:px-8 sm:py-6 shadow-xs space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
 
-            {/* 1. Chọn đề bài (Chỉ các đề đã mở khóa và có Cấu hình đánh giá mới được đưa vào danh sách) */}
+            {/* All problems stay visible; their schedules control submission. */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 1. Chọn đề bài dự thi:
@@ -403,9 +416,9 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                 <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 font-medium">
 
                   <div>
-                    <p className="font-bold text-slate-900 mb-0.5">Chưa có đề thi nào sẵn sàng nhận bài nộp</p>
+                    <p className="font-bold text-slate-900 mb-0.5">Chưa có đề thi</p>
                     <p className="text-slate-600">
-                      Chỉ những đề bài đang <strong>Mở</strong> và đã được Quản trị viên <strong>Cấu hình loại đánh giá chấm điểm</strong> mới xuất hiện trong danh sách nộp bài.
+                      Danh sách sẽ hiển thị khi Quản trị viên thêm đề thi.
                     </p>
                   </div>
                 </div>
@@ -420,9 +433,12 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                     {availableProblems.map((p) => (
                       <option key={p.id} value={p.id}>
                         [{p.code}] - [{p.category}] {p.title} ({p.metric}{isAdmin && p.evaluation_config ? ` • Cấu hình: ${p.evaluation_config}` : ''})
+                        {getItemLockStatus(p.is_locked, p.unlock_at, now).type === 'LOCKED' ? ' — Đề đang khóa' : getItemLockStatus(p.is_locked, p.unlock_at, now).type === 'COUNTDOWN' ? ' — Đề đang đếm ngược' : ''}
+                        {!p.evaluation_config?.trim() ? ' — Chưa cấu hình chấm' : ''}
                       </option>
                     ))}
                   </select>
+                  {!hasEvaluator && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Đề thi này chưa được cấu hình chấm điểm. Chưa thể nộp bài.</p>}
                   {isAdmin && activeProblem?.evaluation_config && (
                     <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3.5 py-2 rounded-xl font-medium">
 
@@ -592,10 +608,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
                       <div>
                         <div className="font-bold text-amber-900">
-                          Chưa có đề thi nào mở để nộp bài!
+                          Chưa có đề thi để nộp bài!
                         </div>
                         <div className="text-amber-700 text-[11px] mt-0.5">
-                          Các đề thi hiện tại đang ở trạng thái Khóa hoặc Đang đếm ngược. Khu vực nộp bài sẽ tự động mở khi có đề thi khả dụng.
+                          Quản trị viên cần thêm đề thi trước khi có thể nộp bài.
                         </div>
                       </div>
                     </div>
@@ -644,9 +660,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
                           Khu vực nộp bài đang tạm khóa
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
-                          Không có đề thi nào đang mở nhận bài nộp
+                          Chưa có đề thi để nộp bài
                         </div>
                       </div>
+                    ) : !hasEvaluator ? (
+                      <p className="text-sm font-bold text-amber-700">Đề thi chưa cấu hình chấm điểm</p>
                     ) : isCurrentLocked ? (
                       <div className="flex flex-col items-center">
 
@@ -794,6 +812,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
 
                   <span>Đề thi đang khóa - Không thể nộp bài</span>
                 </>
+              ) : !hasEvaluator ? (
+                <span>Đề thi chưa cấu hình chấm điểm</span>
               ) : isCurrentLocked ? (
                 <>
 
@@ -827,8 +847,8 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             currentUser={currentUser}
             bestPublicScore={bestPublicScore}
             bestPrivateScore={bestPrivateScore}
-            privateLocked={isPrivateLocked}
-            publicLocked={isPublicLocked}
+            privateLocked={!hasEvaluator || isPrivateLocked}
+            publicLocked={!hasEvaluator || isPublicLocked}
             publicCountdown={publicLockStatus.type === 'COUNTDOWN' ? publicLockStatus.formatted : undefined}
             privateCountdown={privateLockStatus.type === 'COUNTDOWN' ? privateLockStatus.formatted : undefined}
           />
@@ -978,6 +998,7 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({
             </div>
 
             <form onSubmit={handleSaveLimits} className="mt-4 flex-1 overflow-y-auto space-y-4 pr-1">
+              {scheduleError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{scheduleError}</p>}
               {/* PHẦN 1: GIỚI HẠN SỐ LẦN NỘP */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                 <div className="text-xs font-black uppercase tracking-wider text-slate-800">

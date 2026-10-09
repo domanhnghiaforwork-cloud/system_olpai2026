@@ -7,8 +7,13 @@ from ..database import get_db
 from ..models import Dataset, Problem, User
 from ..schemas import DatasetResponse, DatasetCreate, DatasetUpdate
 from ..auth_utils import get_current_user_optional, require_admin
+from ..schedule_utils import utc_naive, validate_opening_time
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
+
+
+def validate_dataset_unlock(problem, value):
+    return validate_opening_time(value, problem.unlock_at if problem else None, "link dữ liệu")
 
 def serialize_dataset(d: Dataset, is_admin: bool = False, prob_locked: bool = False, item_locked: bool = False) -> DatasetResponse:
     url_to_show = d.download_url
@@ -57,7 +62,7 @@ def list_datasets(
         prob_locked = False
         if prob:
             if prob.unlock_at:
-                prob_unlock = prob.unlock_at.replace(tzinfo=None) if prob.unlock_at.tzinfo else prob.unlock_at
+                prob_unlock = utc_naive(prob.unlock_at)
                 prob_locked = (now < prob_unlock)
             elif getattr(prob, 'is_locked', False):
                 prob_locked = True
@@ -65,7 +70,7 @@ def list_datasets(
         # Check dataset lock / countdown
         item_locked = False
         if d.unlock_at:
-            d_unlock = d.unlock_at.replace(tzinfo=None) if d.unlock_at.tzinfo else d.unlock_at
+            d_unlock = utc_naive(d.unlock_at)
             item_locked = (now < d_unlock)
         elif getattr(d, 'is_locked', False):
             item_locked = True
@@ -83,9 +88,7 @@ def create_dataset(
     if not problem:
         raise HTTPException(status_code=404, detail="Không tìm thấy đề bài tương ứng")
 
-    val = item_in.unlock_at
-    if val is not None and val.tzinfo is not None:
-        val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    val = validate_dataset_unlock(problem, item_in.unlock_at)
 
     dataset = Dataset(
         problem_id=item_in.problem_id,
@@ -129,10 +132,7 @@ def update_dataset(
     if "is_locked" in fields_set:
         dataset.is_locked = bool(item_in.is_locked)
     if "unlock_at" in fields_set:
-        val = item_in.unlock_at
-        if val is not None and val.tzinfo is not None:
-            val = val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        dataset.unlock_at = val
+        dataset.unlock_at = validate_dataset_unlock(dataset.problem, item_in.unlock_at)
 
     db.commit()
     db.refresh(dataset)

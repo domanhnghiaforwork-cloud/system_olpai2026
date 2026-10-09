@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dataset, Problem, User } from '@/types';
 import { 
   Database, 
@@ -23,7 +23,8 @@ import {
   Clock
 } from 'lucide-react';
 import { createDataset, updateDataset, deleteDataset, API_BASE } from '@/lib/api';
-import { getItemLockStatus, toDatetimeLocal, toUtcIsoString } from '@/lib/countdown';
+import { getItemLockStatus, parseUnlockDate, toUtcIsoString } from '@/lib/countdown';
+import { getDatasetLockStatus, datasetOpensBeforeProblem, toDatasetDatetimeLocal as toDatetimeLocal } from '@/lib/datasetSchedule';
 
 interface DatasetsTabProps {
   problems: Problem[];
@@ -77,8 +78,28 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
   const [editIsLocked, setEditIsLocked] = useState(false);
   const [editUnlockAt, setEditUnlockAt] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
+  const editParentProblem = problems.find((problem) => problem.id === editingDataset?.problem_id);
+  const refreshedReleases = useRef(new Set<string>());
+
+  // Concealed URLs must be fetched again when both countdowns finish.
+  useEffect(() => {
+    if (isAdmin) return;
+    let refresh = false;
+    for (const dataset of datasets) {
+      if (dataset.download_url) continue;
+      const problem = problems.find((item) => item.id === dataset.problem_id);
+      if (getDatasetLockStatus(dataset, problem, now).type !== 'UNLOCKED') continue;
+      const key = `${dataset.id}:${dataset.unlock_at}:${dataset.is_locked}:${problem?.unlock_at}:${problem?.is_locked}`;
+      if (!refreshedReleases.current.has(key)) {
+        refreshedReleases.current.add(key);
+        refresh = true;
+      }
+    }
+    if (refresh) onRefreshDatasets();
+  }, [datasets, problems, now, isAdmin, onRefreshDatasets]);
 
   // Toggle accordion expand/collapse
   const toggleExpand = (problemId: number) => {
@@ -113,8 +134,8 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
     setAddUrl('');
     setAddSize('');
     setAddCategory('train');
-    setAddIsLocked(Boolean(problem.is_locked));
-    setAddUnlockAt(toDatetimeLocal(problem.unlock_at));
+    setAddIsLocked(false);
+    setAddUnlockAt('');
     setAddError(null);
     setIsAddOpen(true);
   };
@@ -124,6 +145,10 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
     e.preventDefault();
     if (!targetProblem || !addTitle.trim() || !addUrl.trim()) {
       setAddError('Vui lòng nhập tên và link dữ liệu');
+      return;
+    }
+    if (datasetOpensBeforeProblem(toUtcIsoString(addUnlockAt), targetProblem.unlock_at)) {
+      setAddError('Thời gian mở link dữ liệu không được sớm hơn thời gian mở đề thi.');
       return;
     }
 
@@ -136,6 +161,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
         download_url: addUrl.trim(),
         size_str: addSize.trim() || 'Link đám mây',
         category: addCategory,
+        is_locked: addIsLocked,
         unlock_at: toUtcIsoString(addUnlockAt),
       });
 
@@ -156,34 +182,40 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
   // Open Edit Modal
   const handleOpenEdit = (dataItem: Dataset, e: React.MouseEvent) => {
     e.stopPropagation();
-    const parentProb = problems.find((p) => p.id === dataItem.problem_id);
     setEditingDataset(dataItem);
     setEditTitle(dataItem.title);
     setEditUrl(dataItem.download_url);
     setEditCategory((dataItem.category as any) || 'train');
     setEditSize(dataItem.size_str || '');
-    setEditIsLocked(dataItem.is_locked !== undefined ? Boolean(dataItem.is_locked) : Boolean(parentProb?.is_locked));
-    setEditUnlockAt(toDatetimeLocal(dataItem.unlock_at || parentProb?.unlock_at));
+    setEditIsLocked(Boolean(dataItem.is_locked));
+    setEditUnlockAt(toDatetimeLocal(dataItem.unlock_at));
+    setEditError(null);
   };
 
   // Submit Edit Dataset
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingDataset || !editTitle.trim() || !editUrl.trim()) return;
+    if (datasetOpensBeforeProblem(toUtcIsoString(editUnlockAt), editParentProblem?.unlock_at)) {
+      setEditError('Thời gian mở link dữ liệu không được sớm hơn thời gian mở đề thi.');
+      return;
+    }
 
     try {
       setIsEditing(true);
+      setEditError(null);
       await updateDataset(editingDataset.id, {
         title: editTitle.trim(),
         download_url: editUrl.trim(),
         size_str: editSize.trim(),
         category: editCategory,
+        is_locked: editIsLocked,
         unlock_at: toUtcIsoString(editUnlockAt),
       });
       setEditingDataset(null);
       onRefreshDatasets();
     } catch (err: any) {
-      alert(err.message || 'Lỗi khi cập nhật dữ liệu');
+      setEditError(err.message || 'Lỗi khi cập nhật dữ liệu');
     } finally {
       setIsEditing(false);
     }
@@ -365,19 +397,8 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                             ? dataItem.download_url 
                             : `${API_BASE}${dataItem.download_url}`;
 
-                          const rawItemUnlockAt = (dataItem.unlock_at !== undefined && dataItem.unlock_at !== null && dataItem.unlock_at !== '')
-                            ? dataItem.unlock_at
-                            : prob.unlock_at;
-                          const rawItemIsLocked = (dataItem.is_locked !== undefined && dataItem.is_locked !== null)
-                            ? Boolean(dataItem.is_locked)
-                            : Boolean(prob.is_locked);
-
-                          let itemLockStatus = getItemLockStatus(rawItemIsLocked, rawItemUnlockAt, now);
-                          if (probLockStatus.type !== 'UNLOCKED') {
-                            itemLockStatus = probLockStatus;
-                          }
-
-                          const isItemLockedForUser = !isAdmin && itemLockStatus.type !== 'UNLOCKED';
+                          const itemLockStatus = getDatasetLockStatus(dataItem, prob, now);
+                          const isItemLockedForUser = !isAdmin && (itemLockStatus.type !== 'UNLOCKED' || !dataItem.download_url);
 
                           return (
                             <div
@@ -410,7 +431,12 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
 
                               {/* Center: Link bên cạnh HOẶC Trạng thái khóa / đếm ngược */}
                               {isItemLockedForUser ? (
-                                itemLockStatus.type === 'COUNTDOWN' ? (
+                                itemLockStatus.type === 'UNLOCKED' ? (
+                                  <div className="flex items-center gap-2 text-xs text-slate-500" role="status">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    <span>Đang tải liên kết...</span>
+                                  </div>
+                                ) : itemLockStatus.type === 'COUNTDOWN' ? (
                                   <div className="flex items-center gap-2 min-w-0 flex-1 bg-amber-50/90 px-3.5 py-2 rounded-xl border border-amber-200 text-amber-800 text-xs font-bold select-none">
                                     <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
                                     <span>⏳ Link dữ liệu mở sau: {itemLockStatus.formatted}</span>
@@ -447,7 +473,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                                     title="Liên kết đang khóa, không thể sao chép"
                                   >
                                     <Lock className="w-3.5 h-3.5" />
-                                    <span>Đã khóa link</span>
+                                    <span>{itemLockStatus.type === 'UNLOCKED' ? 'Đang tải link' : 'Đã khóa link'}</span>
                                   </button>
                                 ) : (
                                   <>
@@ -599,7 +625,8 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
                       type="checkbox" 
-                      checked={addIsLocked} 
+                      checked={addIsLocked}
+                      aria-label="Khóa liên kết dữ liệu"
                       onChange={(e) => setAddIsLocked(e.target.checked)} 
                       className="sr-only peer" 
                     />
@@ -610,9 +637,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <label htmlFor="add-dataset-unlock-at" className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      Thời gian mở link (Mặc định theo đề thi):
+                      Thời gian mở link (Lịch riêng):
                     </label>
                     {targetProblem?.unlock_at && (
                       <button
@@ -626,6 +653,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                   </div>
                   <input
                     type="datetime-local"
+                    id="add-dataset-unlock-at"
+                    min={toDatetimeLocal(targetProblem?.unlock_at) || undefined}
+                    step="0.001"
                     value={addUnlockAt}
                     onChange={(e) => setAddUnlockAt(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden font-mono"
@@ -634,7 +664,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const d = new Date(Date.now() + 15 * 60 * 1000);
+                        const d = new Date(Math.max(Date.now(), parseUnlockDate(targetProblem?.unlock_at)?.getTime() ?? 0) + 15 * 60 * 1000);
                         setAddUnlockAt(toDatetimeLocal(d));
                       }}
                       className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-blue-400 rounded-md text-slate-600 cursor-pointer"
@@ -644,7 +674,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const d = new Date(Date.now() + 60 * 60 * 1000);
+                        const d = new Date(Math.max(Date.now(), parseUnlockDate(targetProblem?.unlock_at)?.getTime() ?? 0) + 60 * 60 * 1000);
                         setAddUnlockAt(toDatetimeLocal(d));
                       }}
                       className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-blue-400 rounded-md text-slate-600 cursor-pointer"
@@ -664,8 +694,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                   <span className="text-[10px] text-slate-400 mt-1 block">
                     {targetProblem?.unlock_at 
                       ? `Đề bài mở lúc: ${new Date(targetProblem.unlock_at).toLocaleString('vi-VN')}` 
-                      : 'Nếu không đặt thời gian riêng, link sẽ mở ngay khi đề bài mở.'}
+                      : 'Nếu không đặt lịch riêng, link mở khi đề mở, trừ khi link bị khóa thủ công.'}
                   </span>
+                  <p className="mt-1 text-[10px] text-slate-500">Lịch riêng phải bằng hoặc muộn hơn giờ mở đề. Khóa link và lịch của từng link được lưu độc lập.</p>
                 </div>
               </div>
 
@@ -717,6 +748,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
             </div>
 
             <form onSubmit={handleEditSubmit} className="mt-5 space-y-4">
+              {editError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{editError}</div>}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Tên mục dữ liệu:
@@ -782,7 +814,8 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
                       type="checkbox" 
-                      checked={editIsLocked} 
+                      checked={editIsLocked}
+                      aria-label="Khóa liên kết dữ liệu"
                       onChange={(e) => setEditIsLocked(e.target.checked)} 
                       className="sr-only peer" 
                     />
@@ -793,9 +826,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <label htmlFor="edit-dataset-unlock-at" className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      Thời gian mở link (Tự động mở khi hết giờ):
+                      Thời gian mở link (Lịch riêng):
                     </label>
                     {(() => {
                       const parent = problems.find(p => p.id === editingDataset.problem_id);
@@ -815,6 +848,9 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                   </div>
                   <input
                     type="datetime-local"
+                    id="edit-dataset-unlock-at"
+                    min={toDatetimeLocal(editParentProblem?.unlock_at) || undefined}
+                    step="0.001"
                     value={editUnlockAt}
                     onChange={(e) => setEditUnlockAt(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden font-mono"
@@ -823,7 +859,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const d = new Date(Date.now() + 15 * 60 * 1000);
+                        const d = new Date(Math.max(Date.now(), parseUnlockDate(editParentProblem?.unlock_at)?.getTime() ?? 0) + 15 * 60 * 1000);
                         setEditUnlockAt(toDatetimeLocal(d));
                       }}
                       className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-blue-400 rounded-md text-slate-600 cursor-pointer"
@@ -833,7 +869,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const d = new Date(Date.now() + 60 * 60 * 1000);
+                        const d = new Date(Math.max(Date.now(), parseUnlockDate(editParentProblem?.unlock_at)?.getTime() ?? 0) + 60 * 60 * 1000);
                         setEditUnlockAt(toDatetimeLocal(d));
                       }}
                       className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 hover:border-blue-400 rounded-md text-slate-600 cursor-pointer"
@@ -851,7 +887,7 @@ export const DatasetsTab: React.FC<DatasetsTabProps> = ({
                     )}
                   </div>
                   <span className="text-[10px] text-slate-400 mt-1 block">
-                    Đến thời gian này, liên kết dữ liệu sẽ hiển thị và cho phép thí sinh copy link tải.
+                    Link chỉ hiển thị khi cả đề và link đã mở. Lịch riêng phải bằng hoặc muộn hơn giờ mở đề; bỏ lịch riêng để mở theo đề, trừ khi link bị khóa thủ công.
                   </span>
                 </div>
               </div>

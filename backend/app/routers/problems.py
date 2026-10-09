@@ -12,6 +12,7 @@ from ..pdf_utils import PDF_DIR, resolve_problem_pdf, make_content_disposition
 from ..problem_pdf_storage import save_problem_pdf, queue_superseded_pdfs, cleanup_problem_pdfs
 from ..auth_utils import get_current_user_optional, require_admin
 from ..evaluators import list_available_evaluators
+from ..schedule_utils import parse_opening_time, validate_opening_time
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
 
@@ -145,38 +146,13 @@ def create_problem(
     if existing:
         raise HTTPException(status_code=400, detail=f"Mã đề bài '{clean_code}' đã tồn tại trên hệ thống")
 
-    parsed_unlock_at = None
-    if unlock_at and unlock_at.strip():
-        try:
-            parsed_unlock_at = datetime.datetime.fromisoformat(unlock_at.strip().replace("Z", "+00:00"))
-            if parsed_unlock_at.tzinfo is not None:
-                parsed_unlock_at = parsed_unlock_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        except Exception:
-            try:
-                parsed_unlock_at = datetime.datetime.strptime(unlock_at.strip(), "%Y-%m-%d %H:%M:%S")
-            except Exception:
-                parsed_unlock_at = None
-
-    parsed_public_unlock_at = None
-    if public_unlock_at and public_unlock_at.strip():
-        try:
-            parsed_public_unlock_at = datetime.datetime.fromisoformat(public_unlock_at.strip().replace("Z", "+00:00"))
-            if parsed_public_unlock_at.tzinfo is not None:
-                parsed_public_unlock_at = parsed_public_unlock_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        except ValueError as error:
-            raise HTTPException(422, "Thời gian mở Public không hợp lệ.") from error
-
-    parsed_private_unlock_at = None
-    if private_unlock_at and private_unlock_at.strip():
-        try:
-            parsed_private_unlock_at = datetime.datetime.fromisoformat(private_unlock_at.strip().replace("Z", "+00:00"))
-            if parsed_private_unlock_at.tzinfo is not None:
-                parsed_private_unlock_at = parsed_private_unlock_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        except Exception:
-            try:
-                parsed_private_unlock_at = datetime.datetime.strptime(private_unlock_at.strip(), "%Y-%m-%d %H:%M:%S")
-            except Exception:
-                parsed_private_unlock_at = None
+    parsed_unlock_at = parse_opening_time(unlock_at, "đề thi")
+    parsed_public_unlock_at = validate_opening_time(
+        parse_opening_time(public_unlock_at, "Public"), parsed_unlock_at, "Public"
+    )
+    parsed_private_unlock_at = validate_opening_time(
+        parse_opening_time(private_unlock_at, "Private"), parsed_unlock_at, "Private"
+    )
 
     clean_eval_config = evaluation_config.strip() if evaluation_config and evaluation_config.strip() else None
 
@@ -218,6 +194,12 @@ def update_problem(
         raise HTTPException(status_code=404, detail="Problem not found")
 
     fields_set = problem_in.model_fields_set if hasattr(problem_in, "model_fields_set") else problem_in.__fields_set__
+
+    parent_unlock = problem_in.unlock_at if "unlock_at" in fields_set else problem.unlock_at
+    for split in ("public", "private"):
+        field = f"{split}_unlock_at"
+        if field in fields_set:
+            validate_opening_time(getattr(problem_in, field), parent_unlock, f"nộp {split.capitalize()}")
 
     if problem_in.title is not None:
         problem.title = problem_in.title.strip()
